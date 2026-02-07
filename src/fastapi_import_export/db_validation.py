@@ -48,7 +48,7 @@ class DbCheckSpec:
     key_fields: list[str]
     check_fn: DbCheckFn
     field: str | None = None
-    message: str = "数据库校验失败"
+    message: str = "DB check failed / 数据库校验失败"
     type: str = "db_check"
 
 
@@ -57,7 +57,7 @@ def _load_backend() -> Any:
         from fastapi_import_export import db_validation_polars
 
         return db_validation_polars
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover / 覆盖忽略
         raise ImportExportError(
             message="Missing optional dependencies for db validation. Install extras: polars / 缺少数据库校验可选依赖，请安装: polars",
             details={"error": str(exc)},

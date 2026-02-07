@@ -119,6 +119,16 @@ class Importer[TTable, TError: ImportErrorItem]:
         """
         Parse uploaded file.
         解析上传文件。
+
+        Args:
+            file: FastAPI UploadFile.
+                FastAPI 上传文件。
+            resource: Resource class.
+                资源类。
+
+        Returns:
+            TTable: Parsed table data.
+            TTable: 解析后的表格数据。
         """
         return await self._parser(file=file, resource=resource)
 
@@ -128,6 +138,18 @@ class Importer[TTable, TError: ImportErrorItem]:
         """
         Validate parsed data.
         校验解析数据。
+
+        Args:
+            data: Parsed table data.
+                解析后的表格数据。
+            resource: Resource class.
+                资源类。
+            allow_overwrite: Allow overwrite flag.
+                是否允许覆盖。
+
+        Returns:
+            tuple[TTable, list[TError]]: Valid data and error list.
+            tuple[TTable, list[TError]]: 通过校验的数据与错误列表。
         """
         return await self._validator(data=data, resource=resource, allow_overwrite=allow_overwrite)
 
@@ -135,6 +157,16 @@ class Importer[TTable, TError: ImportErrorItem]:
         """
         Transform valid data.
         转换有效数据。
+
+        Args:
+            data: Valid table data.
+                通过校验的表格数据。
+            resource: Resource class.
+                资源类。
+
+        Returns:
+            TTable: Transformed data.
+            TTable: 转换后的数据。
         """
         return await self._transformer(data=data, resource=resource)
 
@@ -142,5 +174,17 @@ class Importer[TTable, TError: ImportErrorItem]:
         """
         Persist transformed data.
         持久化转换后的数据。
+
+        Args:
+            data: Transformed table data.
+                转换后的表格数据。
+            resource: Resource class.
+                资源类。
+            allow_overwrite: Allow overwrite flag.
+                是否允许覆盖。
+
+        Returns:
+            int: Number of rows persisted.
+            int: 实际落库行数。
         """
         return await self._persister(data=data, resource=resource, allow_overwrite=allow_overwrite)

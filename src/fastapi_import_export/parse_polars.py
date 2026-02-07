@@ -47,8 +47,8 @@ def _read_excel_to_polars(file_path: Path, *, sheet_name: str | int | None = Non
         sheet_name: 工作表选择器（None 表示第一个；int 表示索引；str 表示工作表名）。
 
     Returns:
-        Polars DataFrame.
-        Polars DataFrame。
+        pl.DataFrame: Polars DataFrame.
+        pl.DataFrame: Polars 数据框。
 
     Raises:
         KeyError: If a given sheet name does not exist.
@@ -59,7 +59,7 @@ def _read_excel_to_polars(file_path: Path, *, sheet_name: str | int | None = Non
     try:
         read_excel = getattr(pl, "read_excel", None)
         if callable(read_excel):
-            df = read_excel(str(file_path), sheet_name=sheet_name)  # type: ignore[call-arg]
+            df = read_excel(str(file_path), sheet_name=sheet_name)  # type: ignore[call-arg] / 类型忽略
             return cast(pl.DataFrame, df)
     except Exception:
         pass
@@ -154,8 +154,8 @@ def normalize_columns(df: pl.DataFrame, column_mapping: dict[str, str]) -> pl.Da
         column_mapping: 列名映射（原始表头 -> 规范表头）。
 
     Returns:
-        Renamed DataFrame.
-        Renamed DataFrame。
+        pl.DataFrame: Renamed DataFrame.
+        pl.DataFrame: 重命名后的 DataFrame。
     """
     normalized: dict[str, str] = {}
     for c in df.columns:
@@ -171,10 +171,10 @@ def dataframe_to_preview_rows(df: pl.DataFrame) -> list[dict[str, Any]]:
 
     Args:
         df: Polars DataFrame.
-        df: Polars DataFrame。
+        df: Polars 数据框。
 
     Returns:
-        List of rows as dicts (column -> value).
-        List of rows as dicts (column -> value)。
+        list[dict[str, Any]]: List of rows as dicts (column -> value).
+        list[dict[str, Any]]: 以字典形式的行列表（列 -> 值）。
     """
     return df.to_dicts()

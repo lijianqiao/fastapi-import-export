@@ -17,7 +17,7 @@ def _load_backend() -> Any:
         from fastapi_import_export import storage_fs
 
         return storage_fs
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover / 覆盖忽略
         raise ImportExportError(
             message="Missing optional dependencies for storage. Install extras: storage / 缺少存储可选依赖，请安装: storage",
             details={"error": str(exc)},
@@ -137,7 +137,7 @@ if TYPE_CHECKING:
     from fastapi_import_export.storage_fs import ImportPaths as ImportPaths
 else:
 
-    class ImportPaths:  # noqa: D101
+    class ImportPaths:  # noqa: D101 / no docstring / 无需文档字符串
         """
         ImportPaths placeholder when optional backend is missing.
         可选后端缺失时的 ImportPaths 占位类型。

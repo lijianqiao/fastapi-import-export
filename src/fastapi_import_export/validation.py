@@ -18,7 +18,7 @@ def _load_backend() -> Any:
         from fastapi_import_export import validation_polars
 
         return validation_polars
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover / 覆盖忽略
         raise ImportExportError(
             message="Missing optional dependencies for validation. Install extras: polars / 缺少校验可选依赖，请安装: polars",
             details={"error": str(exc)},

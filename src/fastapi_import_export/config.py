@@ -1,37 +1,45 @@
-"""Configuration helpers for import/export.
-FastAPI 导入导出配置助手.
+"""
+@Author: li
+@Email: lijianqiao2906@live.com
+@FileName: config.py
+@DateTime: 2026-02-08
+@Docs: Import/export configuration helpers.
+导入导出配置助手。
+
+Configuration helpers for import/export.
+导入导出配置助手。
 
 This module defines the directory layout used by the import/export workflow.
+本模块定义导入导出流程的目录布局。
+
 It is designed to be reusable across FastAPI projects and can be configured
 via environment variables or function parameters.
-
-本模块定义导入导出流程的目录布局，面向 FastAPI 项目复用。
-支持通过环境变量或函数参数进行配置。
+面向 FastAPI 项目复用，支持通过环境变量或函数参数进行配置。
 
 Environment variables / 环境变量:
-    - IMPORT_EXPORT_BASE_DIR / IMPORT_EXPORT_TMP_DIR:
-      Base directory for the whole import/export workspace.
-      导入导出工作目录根路径。
-    - IMPORT_EXPORT_IMPORTS_DIRNAME:
-      Subdirectory name for imports (default: imports).
-      imports 子目录名称（默认 imports）。
-    - IMPORT_EXPORT_EXPORTS_DIRNAME:
-      Subdirectory name for exports (default: exports).
-      exports 子目录名称（默认 exports）。
+        - IMPORT_EXPORT_BASE_DIR / IMPORT_EXPORT_TMP_DIR:
+            Base directory for the whole import/export workspace.
+            导入导出工作目录根路径。
+        - IMPORT_EXPORT_IMPORTS_DIRNAME:
+            Subdirectory name for imports (default: imports).
+            imports 子目录名称（默认 imports）。
+        - IMPORT_EXPORT_EXPORTS_DIRNAME:
+            Subdirectory name for exports (default: exports).
+            exports 子目录名称（默认 exports）。
 
 Examples:
-    Use default temp directory / 使用默认临时目录:
+        Use default temp directory / 使用默认临时目录:
 
-    >>> from fastapi_import_export.config import resolve_config
-    >>> cfg = resolve_config()
-    >>> cfg.imports_dir.name
-    'imports'
+        >>> from fastapi_import_export.config import resolve_config
+        >>> cfg = resolve_config()
+        >>> cfg.imports_dir.name
+        'imports'
 
-    Custom base_dir / 自定义 base_dir:
+        Custom base_dir / 自定义 base_dir:
 
-    >>> cfg = resolve_config(base_dir="D:/tmp/import-export")
-    >>> str(cfg.base_dir).endswith("import-export")
-    True
+        >>> cfg = resolve_config(base_dir="D:/tmp/import-export")
+        >>> str(cfg.base_dir).endswith("import-export")
+        True
 """
 
 import os

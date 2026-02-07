@@ -37,6 +37,20 @@ class ImportExportError(Exception):
         details: Any | None = None,
         error_code: str = "import_export_error",
     ) -> None:
+        """
+        Initialize an import/export error.
+        初始化导入导出异常。
+
+        Args:
+            message: Error message.
+                错误消息。
+            status_code: HTTP status code.
+                HTTP 状态码。
+            details: Optional error details.
+                可选错误详情。
+            error_code: Stable error code.
+                稳定错误码。
+        """
         super().__init__(message)
         self.message = message
         self.status_code = status_code

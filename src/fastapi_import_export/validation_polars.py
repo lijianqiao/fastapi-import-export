@@ -47,7 +47,7 @@ def collect_infile_duplicates(df: pl.DataFrame, unique_fields: Iterable[str]) ->
                     {
                         "row_number": int(r.get("row_number") or 0),
                         "field": field,
-                        "message": f"字段 {field} 重复值: {value}",
+                        "message": f"Duplicate value for field {field}: {value} / 字段 {field} 重复值: {value}",
                         "value": value,
                         "type": "infile_duplicate",
                     }
@@ -87,7 +87,7 @@ def build_conflict_errors(
                 {
                     "row_number": int(r.get("row_number") or 0),
                     "field": field,
-                    "message": f"{reason}：{field}={value}",
+                    "message": f"Conflict: {reason}; {field}={value} / 冲突：{reason}；{field}={value}",
                     "value": value,
                     "type": "db_conflict",
                 }

@@ -18,7 +18,7 @@ def _load_backend() -> Any:
         from fastapi_import_export import parse_polars
 
         return parse_polars
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover / 覆盖忽略
         raise ImportExportError(
             message="Missing optional dependencies for parsing. Install extras: polars,xlsx / 缺少解析可选依赖，请安装: polars,xlsx",
             details={"error": str(exc)},
@@ -57,8 +57,8 @@ def normalize_columns(df, column_mapping: dict[str, str]):
         column_mapping: 列名映射（原始表头 -> 规范表头）。
 
     Returns:
-        Renamed DataFrame.
-        Renamed DataFrame。
+        DataFrame: Renamed DataFrame.
+        DataFrame: 重命名后的 DataFrame。
     """
     backend = _load_backend()
     return backend.normalize_columns(df, column_mapping)
@@ -85,7 +85,7 @@ if TYPE_CHECKING:
     from fastapi_import_export.parse_polars import ParsedTable as ParsedTable
 else:
 
-    class ParsedTable:  # noqa: D101
+    class ParsedTable:  # noqa: D101 / no docstring / 无需文档字符串
         """
         ParsedTable placeholder when optional backend is missing.
         可选后端缺失时的 ParsedTable 占位类型。

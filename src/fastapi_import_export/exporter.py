@@ -70,9 +70,15 @@ class Exporter[TTable_co, TParams_contra]:
         Query data for export.
         查询导出数据。
 
+        Args:
+            resource: Resource class.
+                资源类。
+            params: Optional query params.
+                可选查询参数。
+
         Returns:
-            TableData: Query result data.
-            TableData: 查询结果数据。
+            TTable_co: Query result data.
+            TTable_co: 查询结果数据。
         """
         return await self._query_fn(resource=resource, params=params)
 
@@ -80,6 +86,12 @@ class Exporter[TTable_co, TParams_contra]:
         """
         Serialize data into bytes.
         将数据序列化为字节。
+
+        Args:
+            data: Source data to serialize.
+                待序列化数据。
+            fmt: Output format name.
+                输出格式名称。
 
         Returns:
             bytes: Serialized bytes.
@@ -91,6 +103,12 @@ class Exporter[TTable_co, TParams_contra]:
         """
         Render bytes to stream.
         将字节渲染为流。
+
+        Args:
+            data: Serialized bytes.
+                序列化后的字节。
+            fmt: Output format name.
+                输出格式名称。
 
         Returns:
             ByteStream: Byte stream.
@@ -110,6 +128,18 @@ class Exporter[TTable_co, TParams_contra]:
         """
         Run export lifecycle and return stream payload.
         执行导出生命周期并返回流式载荷。
+
+        Args:
+            resource: Resource class.
+                资源类。
+            fmt: Output format name.
+                输出格式名称。
+            filename: Suggested filename.
+                建议文件名。
+            media_type: HTTP media type.
+                HTTP 媒体类型。
+            params: Optional query params.
+                可选查询参数。
 
         Returns:
             ExportPayload: Export stream payload.

@@ -1,12 +1,17 @@
-"""Pydantic schemas for import/export workflow.
+"""
+@Author: li
+@Email: lijianqiao2906@live.com
+@FileName: schemas.py
+@DateTime: 2026-02-08
+@Docs: Pydantic schemas for import/export workflow.
 导入导出流程的 Pydantic 模型。
 
-These schemas are intentionally domain-agnostic. Your business logic can add
-its own detailed validation structures if needed, but the core workflow uses
-the models here for standard responses.
+These schemas are intentionally domain-agnostic.
+这些模型与业务无关。
 
-本模块提供导入导出流程的通用 Pydantic 模型，尽量保持与业务无关。
-业务侧可以在校验时返回更丰富的错误信息，但核心流程使用这里的标准模型。
+Your business logic can add its own detailed validation structures if needed,
+but the core workflow uses the models here for standard responses.
+业务侧可扩展更丰富的校验结构，但核心流程使用这些标准响应模型。
 """
 
 from datetime import datetime
@@ -31,9 +36,11 @@ class ImportErrorItem(BaseModel):
             可读的错误描述。
     """
 
-    row_number: int = Field(..., description="源文件行号（从 1 开始，不含表头）")
-    field: str | None = Field(default=None, description="字段名（可选）")
-    message: str = Field(..., description="错误原因")
+    row_number: int = Field(
+        ..., description="Source row number (1-based, excluding header) / 源文件行号（从 1 开始，不含表头）"
+    )
+    field: str | None = Field(default=None, description="Field name (optional) / 字段名（可选）")
+    message: str = Field(..., description="Error reason / 错误原因")
 
 
 class ImportValidateResponse(BaseModel):
@@ -61,7 +68,9 @@ class ImportValidateResponse(BaseModel):
     total_rows: int
     valid_rows: int
     error_rows: int
-    errors: list[ImportErrorItem] = Field(default_factory=list, description="错误明细（可分页/截断返回）")
+    errors: list[ImportErrorItem] = Field(
+        default_factory=list, description="Error details (paginated/truncated) / 错误明细（可分页/截断返回）"
+    )
 
 
 class ImportPreviewRow(BaseModel):

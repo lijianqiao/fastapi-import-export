@@ -3,8 +3,8 @@
 @Email: lijianqiao2906@live.com
 @FileName: service.py
 @DateTime: 2026-02-08
-@Docs: Import/export service with legacy and bridge APIs.
-导入导出服务与桥接 API。
+@Docs: Import/export service with reusable workflow helpers.
+导入导出服务与可复用流程辅助。
 
 Reusable import/export orchestration service for FastAPI projects.
 导入导出流程的 FastAPI 服务类。
@@ -73,8 +73,8 @@ from fastapi_import_export.validation import collect_infile_duplicates
 
 try:
     from sqlalchemy.exc import IntegrityError
-except Exception:  # pragma: no cover
-    IntegrityError = None  # type: ignore
+except Exception:  # pragma: no cover / 覆盖忽略
+    IntegrityError = None  # type: ignore / 类型忽略
 
 
 class RedisLike(Protocol):
@@ -170,7 +170,7 @@ class ExportResult:
         filename: Suggested download filename.
             建议的下载文件名。
         media_type: HTTP media type string.
-            HTTP media_type。
+            HTTP 媒体类型字符串。
     """
 
     path: Path
@@ -183,7 +183,7 @@ def _require_polars() -> Any:
         import polars as pl
 
         return pl
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover / 覆盖忽略
         raise ImportExportError(
             message="Missing optional dependency: polars / 缺少可选依赖: polars",
             details={"error": str(exc)},
@@ -196,7 +196,7 @@ def _require_openpyxl() -> Any:
         from openpyxl import Workbook
 
         return Workbook
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover / 覆盖忽略
         raise ImportExportError(
             message="Missing optional dependency: openpyxl / 缺少可选依赖: openpyxl",
             details={"error": str(exc)},
@@ -245,11 +245,14 @@ def _format_integrity_error(exc: Exception) -> tuple[str, dict[str, Any] | None]
     if detail:
         details["detail"] = str(detail)
     if "duplicate key value violates unique constraint" in msg:
-        user_msg = "唯一约束冲突：导入数据与现有数据存在重复键（可能包含软删除记录）。"
+        user_msg = (
+            "Unique constraint conflict: import data duplicates existing keys (may include soft-deleted records)."
+            " / 唯一约束冲突：导入数据与现有数据存在重复键（可能包含软删除记录）。"
+        )
         if details:
             return user_msg, details
         return user_msg, None
-    user_msg = "数据库完整性错误：导入写入失败。"
+    user_msg = "Database integrity error: import write failed. / 数据库完整性错误：导入写入失败。"
     return user_msg, details or None
 
 
@@ -351,15 +354,22 @@ class ImportExportService:
         lock_ttl_seconds: int = 300,
     ):
         """
+        Initialize the import/export service.
         初始化导入导出服务。
 
         Args:
-            db: 数据库对象（会原样传递给 handler）
-            redis_client: Redis 客户端（可选，用于加锁）
-            config: 导入导出配置（可选）
-            base_dir: 工作目录根路径（可选，会覆盖 config.base_dir）
-            max_upload_mb: 最大上传文件大小（MB，默认 20）
-            lock_ttl_seconds: Redis 锁 TTL（秒，默认 300）
+            db: Database object passed through to handlers.
+                数据库对象（会原样传递给 handler）。
+            redis_client: Optional Redis client for locking.
+                Redis 客户端（可选，用于加锁）。
+            config: Optional import/export config.
+                导入导出配置（可选）。
+            base_dir: Optional base dir override for config.
+                工作目录根路径（可选，会覆盖 config.base_dir）。
+            max_upload_mb: Max upload size in MB.
+                最大上传文件大小（MB，默认 20）。
+            lock_ttl_seconds: Redis lock TTL in seconds.
+                Redis 锁 TTL（秒，默认 300）。
         """
         self.db = db
         self.redis_client = redis_client
@@ -387,10 +397,12 @@ class ImportExportService:
                 异步函数：返回待导出的 Polars DataFrame。
 
         Returns:
-            ExportResult: 包含 path/filename/media_type 的导出结果
+            ExportResult: Export result with path/filename/media_type.
+                包含 path/filename/media_type 的导出结果。
 
         Raises:
-            RuntimeError: Workbook.active 为 None（XLSX 导出时）
+            RuntimeError: When Workbook.active is None (XLSX export).
+                Workbook.active 为 None（XLSX 导出时）。
 
         Examples:
             >>> async def df_fn(_db):
@@ -411,7 +423,7 @@ class ImportExportService:
         wb = Workbook()
         ws = wb.active
         if ws is None:
-            raise RuntimeError("Workbook.active is None")
+            raise RuntimeError("Workbook.active is None / Workbook.active 为空")
         ws = cast(Any, ws)
         ws.title = filename_prefix
 
@@ -445,7 +457,8 @@ class ImportExportService:
                 写模板文件的函数（入参为目标路径）。
 
         Returns:
-            ExportResult: 包含 path/filename/media_type 的导出结果
+            ExportResult: Export result with path/filename/media_type.
+                包含 path/filename/media_type 的导出结果。
         """
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{filename_prefix}_{ts}.xlsx"
@@ -492,12 +505,18 @@ class ImportExportService:
                 业务校验 handler。
             allow_overwrite: Pass-through overwrite flag for domain logic.
                 覆盖标志（透传给业务校验逻辑）。
+            unique_fields: Unique fields to check within file.
+                文件内唯一性检查字段列表。
+            db_checks: Optional database check specs.
+                可选数据库校验规范列表。
 
         Returns:
-            ImportValidateResponse: 校验响应
+            ImportValidateResponse: Validation response.
+                校验响应。
 
         Raises:
-            ImportExportError: 上传文件过大时抛出
+            ImportExportError: When uploaded file is too large.
+                上传文件过大时抛出。
         """
         import_id = new_import_id()
         paths = get_import_paths(import_id, config=self.config)
@@ -517,7 +536,7 @@ class ImportExportService:
                         break
                     size += len(chunk)
                     if size > int(self.max_upload_mb) * 1024 * 1024:
-                        raise ImportExportError(message="上传文件过大")
+                        raise ImportExportError(message="File too large / 上传文件过大")
                     out.write(chunk)
 
             checksum = sha256_file(original_path)
@@ -602,21 +621,23 @@ class ImportExportService:
                 "all" 预览全量解析数据；"valid" 只预览通过校验的数据。
 
         Returns:
-            ImportPreviewResponse: 预览响应（包含 rows）
+            ImportPreviewResponse: Preview response with rows.
+                预览响应（包含 rows）。
 
         Raises:
-            ImportExportError: page/page_size/kind 参数非法或 checksum 不匹配时抛出
+            ImportExportError: When page/page_size/kind is invalid or checksum mismatches.
+                page/page_size/kind 参数非法或 checksum 不匹配时抛出。
         """
         paths = get_import_paths(import_id, config=self.config)
         if page < 1:
-            raise ImportExportError(message="page 必须 >= 1")
+            raise ImportExportError(message="page must be >= 1 / page 必须 >= 1")
         if page_size < 1 or page_size > 500:
-            raise ImportExportError(message="page_size 必须在 1..500 之间")
+            raise ImportExportError(message="page_size must be in 1..500 / page_size 必须在 1..500 之间")
         if kind not in {"all", "valid"}:
-            raise ImportExportError(message="kind 必须为 all 或 valid")
+            raise ImportExportError(message="kind must be all or valid / kind 必须为 all 或 valid")
         meta = read_meta(paths)
         if str(meta.get("checksum")) != checksum:
-            raise ImportExportError(message="checksum 不匹配")
+            raise ImportExportError(message="checksum mismatch / checksum 不匹配")
 
         parquet = paths.valid_parquet if kind == "valid" else paths.parsed_parquet
         if not parquet.exists():
@@ -677,21 +698,26 @@ class ImportExportService:
                 锁 key 的命名空间前缀。
 
         Returns:
-            ImportCommitResponse: 提交响应（包含 imported_rows）
+            ImportCommitResponse: Commit response with imported_rows.
+                提交响应（包含 imported_rows）。
 
         Raises:
-            ImportExportError: checksum 为空/不匹配、import_id 不存在、状态非法、存在校验错误、锁获取失败或数据库完整性错误时抛出
+            ImportExportError: For empty/mismatched checksum, missing import_id, invalid status,
+                existing validation errors, lock failure, or DB integrity error.
+                checksum 为空/不匹配、import_id 不存在、状态非法、存在校验错误、锁获取失败或数据库完整性错误时抛出。
         """
         paths = get_import_paths(body.import_id, config=self.config)
         if not str(body.checksum).strip():
-            raise ImportExportError(message="checksum 不能为空")
+            raise ImportExportError(message="checksum cannot be empty / checksum 不能为空")
         if not paths.meta.exists():
-            raise ImportExportError(message="import_id 不存在或已过期")
+            raise ImportExportError(message="import_id not found or expired / import_id 不存在或已过期")
         meta = read_meta(paths)
         if str(meta.get("checksum")) != body.checksum:
-            raise ImportExportError(message="checksum 不匹配")
+            raise ImportExportError(message="checksum mismatch / checksum 不匹配")
         if str(meta.get("status")) not in {"validated", "committed"}:
-            raise ImportExportError(message="导入状态非法，请先完成上传校验")
+            raise ImportExportError(
+                message="Invalid import status; complete validation first / 导入状态非法，请先完成上传校验"
+            )
 
         if meta.get("status") == "committed":
             committed_at = int(meta.get("committed_at") or now_ts())
@@ -706,7 +732,10 @@ class ImportExportService:
         if paths.errors_json.exists():
             errors = json.loads(paths.errors_json.read_text(encoding="utf-8"))
             if errors:
-                raise ImportExportError(message="存在校验错误，整批不可导入", details=errors[:200])
+                raise ImportExportError(
+                    message="Validation errors exist; batch import is blocked / 存在校验错误，整批不可导入",
+                    details=errors[:200],
+                )
 
         lock_key = f"{lock_namespace}:lock:{body.import_id}"
         lock_acquired = False
@@ -714,7 +743,7 @@ class ImportExportService:
             result = await _maybe_await(self.redis_client.set(lock_key, "1", ex=self.lock_ttl_seconds, nx=True))
             lock_acquired = bool(result)
             if not lock_acquired:
-                raise ImportExportError(message="导入正在执行，请稍后重试")
+                raise ImportExportError(message="Import in progress, retry later / 导入正在执行，请稍后重试")
 
         pl = _require_polars()
         valid_df = pl.read_parquet(paths.valid_parquet) if paths.valid_parquet.exists() else pl.DataFrame()
@@ -758,8 +787,12 @@ class ImportExportService:
                     payload = {"columns": parsed["columns"], "values": parsed["values"], "row_numbers": row_numbers}
                     if details:
                         payload.update(details)
+                    conflict = ", ".join(f"{c}={v}" for c, v in zip(parsed["columns"], parsed["values"], strict=False))
                     raise ImportExportError(
-                        message=f"唯一约束冲突：{', '.join(f'{c}={v}' for c, v in zip(parsed['columns'], parsed['values'], strict=False))} 已存在（可能包含软删除记录）。",
+                        message=(
+                            f"Unique constraint conflict: {conflict} already exists (may include soft-deleted records)."
+                            f" / 唯一约束冲突：{conflict} 已存在（可能包含软删除记录）。"
+                        ),
                         details=payload,
                     ) from exc
                 raise ImportExportError(message=msg, details=details) from exc
@@ -776,12 +809,19 @@ class ImportExportService:
                         "values": parsed["values"],
                         "row_numbers": row_numbers,
                     }
+                    conflict = ", ".join(f"{c}={v}" for c, v in zip(parsed["columns"], parsed["values"], strict=False))
                     raise ImportExportError(
-                        message=f"唯一约束冲突：{', '.join(f'{c}={v}' for c, v in zip(parsed['columns'], parsed['values'], strict=False))} 已存在（可能包含软删除记录）。",
+                        message=(
+                            f"Unique constraint conflict: {conflict} already exists (may include soft-deleted records)."
+                            f" / 唯一约束冲突：{conflict} 已存在（可能包含软删除记录）。"
+                        ),
                         details=return_details,
                     ) from exc
                 raise ImportExportError(
-                    message="唯一约束冲突：导入数据与现有数据存在重复键（可能包含软删除记录）。",
+                    message=(
+                        "Unique constraint conflict: import data duplicates existing keys (may include soft-deleted records)."
+                        " / 唯一约束冲突：导入数据与现有数据存在重复键（可能包含软删除记录）。"
+                    ),
                     details={"error": text},
                 ) from exc
             raise
