@@ -2,6 +2,8 @@
 
 FastAPI-first import/export utilities that keep your domain model decoupled.
 
+Other languages: [README_CN.md](README_CN.md) | [README_JP.md](README_JP.md)
+
 ## Features
 
 - Async-first lifecycle hooks for import and export.
@@ -265,4 +267,4 @@ Use preview with `kind=all` to inspect the original parsed data.
 
 ## License
 
-MIT
+[MIT](LICENSE)

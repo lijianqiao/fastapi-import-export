@@ -2,6 +2,8 @@
 
 FastAPI 优先的导入导出工具库，保持业务模型解耦。
 
+其他语言: [README.md](README.md) | [README_JP.md](README_JP.md)
+
 ## 主要特性
 
 - 异步优先的导入/导出生命周期钩子。
@@ -265,4 +267,4 @@ from fastapi_import_export.service import ImportExportService
 
 ## 许可协议
 
-MIT
+[MIT](LICENSE)
