@@ -1,18 +1,19 @@
-"""fastapi_import_export package.
-
-FastAPI Import/Export utilities intended for reuse across projects.
-
-本包提供可复用的 FastAPI 导入导出基础设施，目标是在不同项目中直接复用。
-
-Examples:
-    >>> from fastapi_import_export import ImportExportService
-    >>> svc = ImportExportService(db=object())
+"""
+@Author: li
+@Email: lijianqiao2906@live.com
+@FileName: __init__.py
+@DateTime: 2026-02-08
+@Docs: Package exports for fastapi_import_export.
+fastapi_import_export 包导出定义。
 """
 
 from fastapi_import_export.config import ImportExportConfig, resolve_config
 from fastapi_import_export.db_validation import DbCheckFn, DbCheckSpec, run_db_checks
-from fastapi_import_export.exceptions import ImportExportError
+from fastapi_import_export.exceptions import ExportError, ImportExportError, ParseError, PersistError, ValidationError
+from fastapi_import_export.exporter import Exporter, ExportPayload
+from fastapi_import_export.importer import Importer, ImportResult, ImportStatus
 from fastapi_import_export.parse import ParsedTable, dataframe_to_preview_rows, normalize_columns, parse_tabular_file
+from fastapi_import_export.resource import Resource
 from fastapi_import_export.schemas import (
     ImportCommitRequest,
     ImportCommitResponse,
@@ -37,7 +38,17 @@ from fastapi_import_export.storage import (
 from fastapi_import_export.validation_core import ErrorCollector, RowContext
 
 __all__ = [
+    "Resource",
+    "Importer",
+    "ImportResult",
+    "ImportStatus",
+    "Exporter",
+    "ExportPayload",
     "ImportExportError",
+    "ParseError",
+    "ValidationError",
+    "PersistError",
+    "ExportError",
     "DbCheckFn",
     "DbCheckSpec",
     "run_db_checks",

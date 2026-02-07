@@ -1,106 +1,126 @@
 # fastapi_import_export
 
-一个可复用的 FastAPI 导入导出基础库（上传→解析→校验→预览→提交、导出 CSV/Excel、模板生成、临时文件清理）。
+FastAPI 优先的导入导出工具库，保持业务模型解耦。
 
-本库只提供通用基础设施：具体业务字段规则（例如“设备导入导出”）通过注入 handler（validate/persist/export/template）实现。
+## 为什么不是 django-import-export
 
-## 依赖
+- Django 生态的 ORM/Admin 强耦合不适配 FastAPI 的异步工作流。
+- 本库以异步为先，定位为工具库而非框架。
+- 提供稳定、可组合的 API 与显式生命周期钩子。
 
-- fastapi
-- sqlalchemy
-- pydantic
-- polars
-- openpyxl
-- uuid6
-- 可选：redis（或兼容客户端，用于导入提交锁）
+## 核心边界
+
+- 不管理数据库连接。
+- 不接管 ORM，仅做适配。
+- 不处理权限鉴权。
+- 不处理文件存储（仅提供可选后端）。
+
+## 安装
+
+最小安装（仅核心）：
+
+```bash
+pip install fastapi-import-export
+```
+
+常用可选依赖：
+
+```bash
+pip install fastapi-import-export[polars,xlsx,storage]
+```
+
+完整依赖：
+
+```bash
+pip install fastapi-import-export[full]
+```
 
 ## 快速开始
 
-```python
-from fastapi_import_export import ImportExportService
+### 1) 定义 Resource
 
-svc = ImportExportService(
-    db=db,                       # 任意对象，原样传递给你的 handler
-    redis_client=redis_client,   # 可选
-    base_dir=None,               # 可选；默认从环境变量或系统临时目录推导
-    max_upload_mb=20,
-    lock_ttl_seconds=300,
+```python
+from fastapi_import_export import Resource
+
+
+class UserResource(Resource):
+    id: int | None
+    username: str
+    email: str
+
+    field_aliases = {
+        "Username": "username",
+        "Email": "email",
+    }
+```
+
+### 2) 组装 Importer
+
+```python
+from fastapi_import_export import Importer
+
+
+importer = Importer(
+    parser=parse_fn,
+    validator=validate_fn,
+    transformer=transform_fn,
+    persister=persist_fn,
 )
 ```
 
-环境变量（可选）：
-
-- IMPORT_EXPORT_BASE_DIR / IMPORT_EXPORT_TMP_DIR：导入导出根目录
-- IMPORT_EXPORT_IMPORTS_DIRNAME：imports 子目录名（默认 imports）
-- IMPORT_EXPORT_EXPORTS_DIRNAME：exports 子目录名（默认 exports）
-
-更多端到端 FastAPI 接入示例、handler 签名、存储结构说明，请参考仓库内的适配说明或自行按需封装路由。
-
-## Validation Core / 校验核心
-
-本库默认只提供“校验核心原语”，用于收集错误与读取字段值，不包含任何业务规则（例如 IP/枚举/正则/范围校验）。
-
-By default, this library only provides core validation primitives for collecting errors and reading values. It intentionally does NOT include business rules (IP/enum/regex/range checks).
-
-### ErrorCollector & RowContext
+### 3) FastAPI 接入示例
 
 ```python
-from fastapi_import_export import ErrorCollector, RowContext
+from fastapi import APIRouter, UploadFile
+from fastapi_import_export import Importer
 
-errors: list[dict] = []
-collector = ErrorCollector(errors)
 
-for r in rows:
-    ctx = RowContext(collector=collector, row_number=int(r["row_number"]), row=r)
-    value = ctx.get_str("name")
-    if not value:
-        ctx.add(field="name", message="name is required")
+router = APIRouter()
+
+
+@router.post("/import")
+async def import_data(file: UploadFile):
+    result = await importer.import_data(file=file, resource=UserResource)
+    return result
 ```
 
-## Validation Extras (Optional) / 校验扩展（可选）
-
-如果你希望减少样板代码，可以显式引入 `validation_extras` 中的 `RowValidator`（包含 IP/枚举/正则等规则）。这是可选能力，不属于默认“通用核心”。
-
-If you want less boilerplate, you can explicitly import `RowValidator` from `validation_extras` (IP/enum/regex rules). This is optional and not part of the default core.
+## 异步导入示例
 
 ```python
-from fastapi_import_export.validation_extras import RowValidator
+async def validate_fn(*, data, resource, allow_overwrite=False):
+    return data, []
 
-errors: list[dict] = []
-for r in rows:
-    v = RowValidator(errors=errors, row_number=int(r["row_number"]), row=r)
-    v.not_blank("name", "name is required")
-    v.ip_address("ip_address", "invalid ip")
+
+async def persist_fn(*, data, resource, allow_overwrite=False):
+    return 100
 ```
 
-## DB Checks / 数据库校验扩展（推荐）
-
-本库未来会被复用到不同 FastAPI 项目中，因此更推荐使用“数据库校验扩展接口”，让业务侧只实现“怎么查库”，通用库负责把冲突结果映射回 `row_number` 并返回统一错误结构。
-
-This library is intended for reuse across FastAPI projects. A recommended approach is using the "DB checks" extension: your domain only implements "how to query the database", while this library maps conflicts back to `row_number` and produces consistent error items.
-
-### 核心接口 / Core API
-
-- `DbCheckSpec`: 声明 key_fields（用于拼 key）、check_fn（业务查库函数）与默认 message。
-- `db_check_fn(db, keys, allow_overwrite=...) -> dict[key_tuple, info]`：返回冲突映射，通用库会自动生成行级错误。
-
-### 示例 / Example
+## 大文件导出（流式）
 
 ```python
-from fastapi_import_export import DbCheckSpec
+from fastapi import StreamingResponse
 
-async def check_ip_conflict(db, keys, *, allow_overwrite: bool = False):
-    # keys: list[tuple[str, ...]]，比如 [("10.0.0.1",), ("10.0.0.2",)]
-    # 业务侧实现：查库后返回冲突 key -> info
-    conflicts = {}
-    # conflicts[key] = {"message": "IP 已存在", "details": {"is_deleted": False}}
-    return conflicts
 
-spec = DbCheckSpec(
-    key_fields=["ip_address"],
-    check_fn=check_ip_conflict,
-    field="ip_address",
-    message="IP 冲突",
-    type="db_unique",
+payload = await exporter.stream(
+    resource=UserResource,
+    fmt="csv",
+    filename="users.csv",
+    media_type="text/csv",
 )
+return StreamingResponse(payload.stream, media_type=payload.media_type)
 ```
+
+## ORM 适配示例
+
+```python
+async def query_fn(*, resource, params=None):
+    return data
+```
+
+## 旧 API 兼容
+
+你可以继续使用 ImportExportService，通过适配器桥接到新协议。
+
+## 关于 from __future__ import annotations
+
+由于项目规则禁止该导入，当前实现不使用该特性，并作为例外记录。
