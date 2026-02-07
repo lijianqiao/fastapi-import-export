@@ -116,12 +116,3 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 async def query_fn(*, resource, params=None):
     return data
 ```
-
-## Legacy Bridge
-
-You can keep using ImportExportService with adapters to new protocols.
-
-## Note on from __future__ import annotations
-
-Project policy forbids this import; it is documented as an exception.
-

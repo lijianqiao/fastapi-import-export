@@ -49,10 +49,7 @@ from fastapi import UploadFile
 from fastapi_import_export.config import ImportExportConfig, resolve_config
 from fastapi_import_export.db_validation import DbCheckSpec, run_db_checks
 from fastapi_import_export.exceptions import ImportExportError
-from fastapi_import_export.exporter import Exporter, ExportPayload
-from fastapi_import_export.importer import Importer, ImportResult
 from fastapi_import_export.parse import normalize_columns, parse_tabular_file
-from fastapi_import_export.resource import Resource
 from fastapi_import_export.schemas import (
     ImportCommitRequest,
     ImportCommitResponse,
@@ -71,30 +68,7 @@ from fastapi_import_export.storage import (
     sha256_file,
     write_meta,
 )
-from fastapi_import_export.typing import (
-    ParseFn as BridgeParseFn,
-)
-from fastapi_import_export.typing import (
-    PersistFn as BridgePersistFn,
-)
-from fastapi_import_export.typing import (
-    QueryFn as BridgeQueryFn,
-)
-from fastapi_import_export.typing import (
-    RenderFn as BridgeRenderFn,
-)
-from fastapi_import_export.typing import (
-    SerializeFn as BridgeSerializeFn,
-)
-from fastapi_import_export.typing import (
-    TableData,
-)
-from fastapi_import_export.typing import (
-    TransformFn as BridgeTransformFn,
-)
-from fastapi_import_export.typing import (
-    ValidateFn as BridgeValidateFn,
-)
+from fastapi_import_export.typing import TableData
 from fastapi_import_export.validation import collect_infile_duplicates
 
 try:
@@ -393,193 +367,6 @@ class ImportExportService:
         self.max_upload_mb = max_upload_mb
         self.lock_ttl_seconds = lock_ttl_seconds
 
-    def build_importer(
-        self,
-        *,
-        parser: BridgeParseFn,
-        validator: BridgeValidateFn,
-        transformer: BridgeTransformFn,
-        persister: BridgePersistFn,
-    ) -> Importer:
-        """
-        Build a new Importer instance.
-        构建新的 Importer 实例。
-
-        Args:
-            parser: Parse function.
-            parser: 解析函数。
-            validator: Validate function.
-            validator: 校验函数。
-            transformer: Transform function.
-            transformer: 转换函数。
-            persister: Persist function.
-            persister: 落库函数。
-
-        Returns:
-            Importer: Importer instance.
-            Importer: Importer 实例。
-        """
-        return Importer(
-            parser=parser,
-            validator=validator,
-            transformer=transformer,
-            persister=persister,
-        )
-
-    def build_exporter(
-        self,
-        *,
-        query_fn: BridgeQueryFn,
-        serialize_fn: BridgeSerializeFn,
-        render_fn: BridgeRenderFn,
-    ) -> Exporter:
-        """
-        Build a new Exporter instance.
-        构建新的 Exporter 实例。
-
-        Args:
-            query_fn: Query function.
-            query_fn: 查询函数。
-            serialize_fn: Serialize function.
-            serialize_fn: 序列化函数。
-            render_fn: Render function.
-            render_fn: 渲染函数。
-
-        Returns:
-            Exporter: Exporter instance.
-            Exporter: Exporter 实例。
-        """
-        return Exporter(query_fn=query_fn, serialize_fn=serialize_fn, render_fn=render_fn)
-
-    async def import_with_importer(
-        self,
-        *,
-        importer: Importer,
-        file: UploadFile,
-        resource: type[Resource],
-        allow_overwrite: bool = False,
-    ) -> ImportResult:
-        """
-        Run import using the new Importer.
-        使用新的 Importer 执行导入。
-
-        Args:
-            importer: Importer instance.
-            importer: Importer 实例。
-            file: FastAPI UploadFile.
-            file: FastAPI 上传文件。
-            resource: Resource class.
-            resource: 资源类。
-            allow_overwrite: Allow overwrite flag.
-            allow_overwrite: 是否允许覆盖。
-
-        Returns:
-            ImportResult: Import result.
-            ImportResult: 导入结果。
-        """
-        return await importer.import_data(file=file, resource=resource, allow_overwrite=allow_overwrite)
-
-    async def export_with_exporter(
-        self,
-        *,
-        exporter: Exporter,
-        resource: type[Resource],
-        fmt: str,
-        filename: str,
-        media_type: str,
-        params: Any | None = None,
-    ) -> ExportPayload:
-        """
-        Run export using the new Exporter.
-        使用新的 Exporter 执行导出。
-
-        Args:
-            exporter: Exporter instance.
-            exporter: Exporter 实例。
-            resource: Resource class.
-            resource: 资源类。
-            fmt: Export format.
-            fmt: 导出格式。
-            filename: Suggested filename.
-            filename: 建议文件名。
-            media_type: HTTP media type.
-            media_type: HTTP 媒体类型。
-            params: Query params.
-            params: 查询参数。
-
-        Returns:
-            ExportPayload: Stream payload.
-            ExportPayload: 流式载荷。
-        """
-        return await exporter.stream(
-            resource=resource,
-            fmt=fmt,
-            filename=filename,
-            media_type=media_type,
-            params=params,
-        )
-
-    def adapt_legacy_validate(self, *, validate_fn: "ValidateFn") -> BridgeValidateFn:
-        """
-        Adapt legacy ValidateFn to the new protocol.
-        将旧版 ValidateFn 适配为新协议。
-
-        Args:
-            validate_fn: Legacy validate function.
-            validate_fn: 旧版校验函数。
-
-        Returns:
-            BridgeValidateFn: Adapted validate function.
-            BridgeValidateFn: 适配后的校验函数。
-        """
-
-        async def _adapter(
-            *,
-            data: TableData,
-            resource: type[Resource],
-            allow_overwrite: bool = False,
-        ) -> tuple[TableData, list[ImportErrorItem]]:
-            _ = resource
-            df = cast(Any, data)
-            valid_df, errors = await validate_fn(self.db, df, allow_overwrite=allow_overwrite)
-            mapped = [
-                ImportErrorItem(
-                    row_number=int(e.get("row_number") or 0),
-                    field=cast(str | None, e.get("field")),
-                    message=str(e.get("message") or ""),
-                )
-                for e in errors
-            ]
-            return valid_df, mapped
-
-        return _adapter
-
-    def adapt_legacy_persist(self, *, persist_fn: "PersistFn") -> BridgePersistFn:
-        """
-        Adapt legacy PersistFn to the new protocol.
-        将旧版 PersistFn 适配为新协议。
-
-        Args:
-            persist_fn: Legacy persist function.
-            persist_fn: 旧版落库函数。
-
-        Returns:
-            BridgePersistFn: Adapted persist function.
-            BridgePersistFn: 适配后的落库函数。
-        """
-
-        async def _adapter(
-            *,
-            data: TableData,
-            resource: type[Resource],
-            allow_overwrite: bool = False,
-        ) -> int:
-            _ = resource
-            df = cast(Any, data)
-            return await persist_fn(self.db, df, allow_overwrite=allow_overwrite)
-
-        return _adapter
-
     async def export_table(
         self,
         *,
@@ -611,7 +398,6 @@ class ImportExportService:
             ...     return pl.DataFrame([{"a": 1}])
             >>> # await svc.export_table(fmt="csv", filename_prefix="items", df_fn=df_fn)
         """
-        pl = _require_polars()
         df = await df_fn(self.db)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{filename_prefix}_{ts}.{fmt}"

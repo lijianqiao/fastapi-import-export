@@ -116,11 +116,3 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 async def query_fn(*, resource, params=None):
     return data
 ```
-
-## 旧 API 兼容
-
-你可以继续使用 ImportExportService，通过适配器桥接到新协议。
-
-## 关于 from __future__ import annotations
-
-由于项目规则禁止该导入，当前实现不使用该特性，并作为例外记录。

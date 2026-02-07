@@ -7,7 +7,6 @@
 导入器抽象与生命周期钩子。
 """
 
-from abc import ABC
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -48,7 +47,7 @@ class ImportResult:
     errors: list[ImportErrorItem]
 
 
-class Importer(ABC):
+class Importer:
     """
     Importer base class.
     导入器基类。
