@@ -7,7 +7,7 @@
 资源基类与字段映射钩子。
 """
 
-from typing import ClassVar
+from typing import ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict
 
@@ -30,7 +30,7 @@ class Resource(BaseModel):
     field_aliases: ClassVar[dict[str, str]] = {}
 
     @classmethod
-    def field_mapping(cls) -> dict[str, str]:
+    def field_mapping(cls: type[Self]) -> dict[str, str]:
         """
         Return the explicit field mapping.
         返回显式字段映射。

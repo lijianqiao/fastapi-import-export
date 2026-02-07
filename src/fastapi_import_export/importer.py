@@ -14,7 +14,7 @@ from fastapi import UploadFile
 
 from fastapi_import_export.resource import Resource
 from fastapi_import_export.schemas import ImportErrorItem
-from fastapi_import_export.typing import ParseFn, PersistFn, TableData, TransformFn, ValidateFn
+from fastapi_import_export.typing import ParseFn, PersistFn, TransformFn, ValidateFn
 
 
 class ImportStatus(StrEnum):
@@ -28,7 +28,7 @@ class ImportStatus(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ImportResult:
+class ImportResult[TError: ImportErrorItem]:
     """
     Import result.
     导入结果。
@@ -44,10 +44,10 @@ class ImportResult:
 
     status: ImportStatus
     imported_rows: int
-    errors: list[ImportErrorItem]
+    errors: list[TError]
 
 
-class Importer:
+class Importer[TTable, TError: ImportErrorItem]:
     """
     Importer base class.
     导入器基类。
@@ -60,10 +60,10 @@ class Importer:
     def __init__(
         self,
         *,
-        parser: ParseFn,
-        validator: ValidateFn,
-        transformer: TransformFn,
-        persister: PersistFn,
+        parser: ParseFn[TTable],
+        validator: ValidateFn[TTable, TError],
+        transformer: TransformFn[TTable],
+        persister: PersistFn[TTable],
     ) -> None:
         """
         Initialize importer.
@@ -90,7 +90,7 @@ class Importer:
         file: UploadFile,
         resource: type[Resource],
         allow_overwrite: bool = False,
-    ) -> ImportResult:
+    ) -> ImportResult[TError]:
         """
         Run the import lifecycle.
         执行导入生命周期。
@@ -115,7 +115,7 @@ class Importer:
         imported_rows = await self.persist(data=transformed, resource=resource, allow_overwrite=allow_overwrite)
         return ImportResult(status=ImportStatus.COMMITTED, imported_rows=imported_rows, errors=[])
 
-    async def parse(self, *, file: UploadFile, resource: type[Resource]) -> TableData:
+    async def parse(self, *, file: UploadFile, resource: type[Resource]) -> TTable:
         """
         Parse uploaded file.
         解析上传文件。
@@ -123,22 +123,22 @@ class Importer:
         return await self._parser(file=file, resource=resource)
 
     async def validate(
-        self, *, data: TableData, resource: type[Resource], allow_overwrite: bool
-    ) -> tuple[TableData, list[ImportErrorItem]]:
+        self, *, data: TTable, resource: type[Resource], allow_overwrite: bool
+    ) -> tuple[TTable, list[TError]]:
         """
         Validate parsed data.
         校验解析数据。
         """
         return await self._validator(data=data, resource=resource, allow_overwrite=allow_overwrite)
 
-    async def transform(self, *, data: TableData, resource: type[Resource]) -> TableData:
+    async def transform(self, *, data: TTable, resource: type[Resource]) -> TTable:
         """
         Transform valid data.
         转换有效数据。
         """
         return await self._transformer(data=data, resource=resource)
 
-    async def persist(self, *, data: TableData, resource: type[Resource], allow_overwrite: bool) -> int:
+    async def persist(self, *, data: TTable, resource: type[Resource], allow_overwrite: bool) -> int:
         """
         Persist transformed data.
         持久化转换后的数据。

@@ -8,18 +8,34 @@
 """
 
 from collections.abc import AsyncIterable
-from typing import Any, Protocol
+from typing import Any, ParamSpec, Protocol, TypeVar
 
 from fastapi import UploadFile
 
 from fastapi_import_export.resource import Resource
 from fastapi_import_export.schemas import ImportErrorItem
 
-TableData = Any
-ByteStream = AsyncIterable[bytes]
+P = ParamSpec("P")
+TTable = TypeVar("TTable")
+TTable_co = TypeVar("TTable_co", covariant=True)
+TTable_contra = TypeVar("TTable_contra", contravariant=True)
+TParams_contra = TypeVar("TParams_contra", contravariant=True)
+TError = TypeVar("TError", bound=ImportErrorItem)
+
+type TableData = Any
+type ByteStream = AsyncIterable[bytes]
 
 
-class ParseFn(Protocol):
+class AsyncCallable(Protocol[P, TTable_co]):
+    """
+    Async callable protocol.
+    异步可调用协议。
+    """
+
+    async def __call__(self, *args: P.args, **kwargs: P.kwargs) -> TTable_co: ...
+
+
+class ParseFn(Protocol[TTable_co]):
     """
     Parse function protocol.
     解析函数协议。
@@ -35,10 +51,10 @@ class ParseFn(Protocol):
         TableData: 解析后的表格数据。
     """
 
-    async def __call__(self, *, file: UploadFile, resource: type[Resource]) -> TableData: ...
+    async def __call__(self, *, file: UploadFile, resource: type[Resource]) -> TTable_co: ...
 
 
-class ValidateFn(Protocol):
+class ValidateFn(Protocol[TTable, TError]):
     """
     Validate function protocol.
     校验函数协议。
@@ -49,11 +65,11 @@ class ValidateFn(Protocol):
     """
 
     async def __call__(
-        self, *, data: TableData, resource: type[Resource], allow_overwrite: bool = False
-    ) -> tuple[TableData, list[ImportErrorItem]]: ...
+        self, *, data: TTable, resource: type[Resource], allow_overwrite: bool = False
+    ) -> tuple[TTable, list[TError]]: ...
 
 
-class TransformFn(Protocol):
+class TransformFn(Protocol[TTable]):
     """
     Transform function protocol.
     转换函数协议。
@@ -63,10 +79,10 @@ class TransformFn(Protocol):
         TableData: 转换后的数据。
     """
 
-    async def __call__(self, *, data: TableData, resource: type[Resource]) -> TableData: ...
+    async def __call__(self, *, data: TTable, resource: type[Resource]) -> TTable: ...
 
 
-class PersistFn(Protocol):
+class PersistFn(Protocol[TTable_contra]):
     """
     Persist function protocol.
     落库函数协议。
@@ -76,10 +92,12 @@ class PersistFn(Protocol):
         int: 实际落库行数。
     """
 
-    async def __call__(self, *, data: TableData, resource: type[Resource], allow_overwrite: bool = False) -> int: ...
+    async def __call__(
+        self, *, data: TTable_contra, resource: type[Resource], allow_overwrite: bool = False
+    ) -> int: ...
 
 
-class QueryFn(Protocol):
+class QueryFn(Protocol[TTable_co, TParams_contra]):
     """
     Query function protocol.
     查询函数协议。
@@ -89,10 +107,10 @@ class QueryFn(Protocol):
         TableData: 查询结果数据。
     """
 
-    async def __call__(self, *, resource: type[Resource], params: Any | None = None) -> TableData: ...
+    async def __call__(self, *, resource: type[Resource], params: TParams_contra | None = None) -> TTable_co: ...
 
 
-class SerializeFn(Protocol):
+class SerializeFn(Protocol[TTable_contra]):
     """
     Serialize function protocol.
     序列化函数协议。
@@ -102,7 +120,7 @@ class SerializeFn(Protocol):
         bytes: 序列化后的字节数据。
     """
 
-    async def __call__(self, *, data: TableData, fmt: str) -> bytes: ...
+    async def __call__(self, *, data: TTable_contra, fmt: str) -> bytes: ...
 
 
 class RenderFn(Protocol):

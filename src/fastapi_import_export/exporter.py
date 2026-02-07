@@ -10,7 +10,7 @@
 from dataclasses import dataclass
 
 from fastapi_import_export.resource import Resource
-from fastapi_import_export.typing import ByteStream, QueryFn, RenderFn, SerializeFn, TableData
+from fastapi_import_export.typing import ByteStream, QueryFn, RenderFn, SerializeFn
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +33,7 @@ class ExportPayload:
     stream: ByteStream
 
 
-class Exporter:
+class Exporter[TTable_co, TParams_contra]:
     """
     Exporter base class.
     导出器基类。
@@ -45,8 +45,8 @@ class Exporter:
     def __init__(
         self,
         *,
-        query_fn: QueryFn,
-        serialize_fn: SerializeFn,
+        query_fn: QueryFn[TTable_co, TParams_contra],
+        serialize_fn: SerializeFn[TTable_co],
         render_fn: RenderFn,
     ) -> None:
         """
@@ -65,7 +65,7 @@ class Exporter:
         self._serialize_fn = serialize_fn
         self._render_fn = render_fn
 
-    async def query(self, *, resource: type[Resource], params: object | None = None) -> TableData:
+    async def query(self, *, resource: type[Resource], params: TParams_contra | None = None) -> TTable_co:
         """
         Query data for export.
         查询导出数据。
@@ -76,7 +76,7 @@ class Exporter:
         """
         return await self._query_fn(resource=resource, params=params)
 
-    async def serialize(self, *, data: TableData, fmt: str) -> bytes:
+    async def serialize(self, *, data: TTable_co, fmt: str) -> bytes:
         """
         Serialize data into bytes.
         将数据序列化为字节。
@@ -105,7 +105,7 @@ class Exporter:
         fmt: str,
         filename: str,
         media_type: str,
-        params: object | None = None,
+        params: TParams_contra | None = None,
     ) -> ExportPayload:
         """
         Run export lifecycle and return stream payload.
