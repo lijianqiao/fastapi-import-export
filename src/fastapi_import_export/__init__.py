@@ -22,7 +22,6 @@ from fastapi_import_export.schemas import (
     ImportPreviewRow,
     ImportValidateResponse,
 )
-from fastapi_import_export.service import ExportResult, ImportExportService
 from fastapi_import_export.storage import (
     ImportPaths,
     cleanup_expired_imports,
@@ -66,8 +65,6 @@ __all__ = [
     "ImportPreviewResponse",
     "ImportPreviewRow",
     "ImportValidateResponse",
-    "ExportResult",
-    "ImportExportService",
     "ImportPaths",
     "cleanup_expired_imports",
     "create_export_path",

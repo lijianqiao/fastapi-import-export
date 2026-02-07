@@ -1,82 +1,68 @@
-"""Validation helpers.
-
-通用校验辅助（默认不包含业务规则）。
+"""
+@Author: li
+@Email: lijianqiao2906@live.com
+@FileName: validation.py
+@DateTime: 2026-02-08
+@Docs: Validation facade with optional backend.
+校验门面（可选后端）。
 """
 
 from collections.abc import Iterable
 from typing import Any
 
-import polars as pl
+from fastapi_import_export.exceptions import ImportExportError
 
 
-def collect_infile_duplicates(df: pl.DataFrame, unique_fields: Iterable[str]) -> list[dict[str, Any]]:
+def _load_backend() -> Any:
+    try:
+        from fastapi_import_export import validation_polars
+
+        return validation_polars
+    except Exception as exc:  # pragma: no cover
+        raise ImportExportError(
+            message="Missing optional dependencies for validation. Install extras: polars / 缺少校验可选依赖，请安装: polars",
+            details={"error": str(exc)},
+            error_code="missing_dependency",
+        ) from exc
+
+
+def collect_infile_duplicates(df, unique_fields: Iterable[str]) -> list[dict[str, Any]]:
     """
-    收集数据框中指定字段的重复值。
+    Collect duplicate values within a file.
+    收集文件内重复值。
 
     Args:
-        df (pl.DataFrame): 输入数据框，必须包含 "row_number" 列。
-        unique_fields (Iterable[str]): 要检查重复值的字段列表。
+        df: Input DataFrame.
+        df: 输入数据框。
+        unique_fields: Fields to check.
+        unique_fields: 要检查的字段列表。
 
     Returns:
-        list[dict[str, Any]]: 包含重复值错误信息的列表，每个元素为一个字典，包含 "row_number"、"field"、"message"、"value" 和 "type" 键。
+        list[dict[str, Any]]: Error list.
+        list[dict[str, Any]]: 错误列表。
     """
-    errors: list[dict[str, Any]] = []
-    if df.is_empty():
-        return errors
-    cols = set(df.columns)
-    for field in unique_fields:
-        if field not in cols:
-            continue
-        # 分组统计，找出重复值
-        dup_values = set(
-            df.group_by(field).agg(pl.len().alias("count")).filter(pl.col("count") > 1).get_column(field).to_list()
-        )
-        if not dup_values:
-            continue
-        for r in df.select(["row_number", field]).to_dicts():
-            value = str(r.get(field) or "")
-            if value and value in dup_values:
-                errors.append(
-                    {
-                        "row_number": int(r.get("row_number") or 0),
-                        "field": field,
-                        "message": f"字段 {field} 重复值: {value}",
-                        "value": value,
-                        "type": "infile_duplicate",
-                    }
-                )
-    return errors
+    backend = _load_backend()
+    return backend.collect_infile_duplicates(df, unique_fields)
 
 
-def build_conflict_errors(
-    df: pl.DataFrame, field: str, conflict_values: Iterable[str], *, reason: str
-) -> list[dict[str, Any]]:
+def build_conflict_errors(df, field: str, conflict_values: Iterable[str], *, reason: str) -> list[dict[str, Any]]:
     """
-    构建数据库冲突错误信息。
+    Build conflict error list.
+    构建冲突错误列表。
 
     Args:
-        df (pl.DataFrame): 输入数据框，必须包含 "row_number" 列。
-        field (str): 冲突字段名。
-        conflict_values (Iterable[str]): 冲突值列表。
-        reason (str): 冲突原因描述。
+        df: Input DataFrame.
+        df: 输入数据框。
+        field: Conflict field name.
+        field: 冲突字段名。
+        conflict_values: Conflict values.
+        conflict_values: 冲突值列表。
+        reason: Conflict reason.
+        reason: 冲突原因。
 
     Returns:
-        list[dict[str, Any]]: 包含冲突错误信息的列表，每个元素为一个字典，包含 "row_number"、"field"、"message"、"value" 和 "type" 键。
+        list[dict[str, Any]]: Error list.
+        list[dict[str, Any]]: 错误列表。
     """
-    cv = {v for v in conflict_values if str(v).strip()}
-    if not cv or df.is_empty() or field not in df.columns:
-        return []
-    errors: list[dict[str, Any]] = []
-    for r in df.select(["row_number", field]).to_dicts():
-        value = str(r.get(field) or "")
-        if value and value in cv:
-            errors.append(
-                {
-                    "row_number": int(r.get("row_number") or 0),
-                    "field": field,
-                    "message": f"{reason}：{field}={value}",
-                    "value": value,
-                    "type": "db_conflict",
-                }
-            )
-    return errors
+    backend = _load_backend()
+    return backend.build_conflict_errors(df, field, conflict_values, reason=reason)
