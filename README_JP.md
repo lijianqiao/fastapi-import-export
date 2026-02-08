@@ -124,6 +124,8 @@ importer = Importer(
 ### 3) FastAPI への組み込み
 
 ```python
+from uuid import UUID
+
 from fastapi import APIRouter, UploadFile
 
 
@@ -177,7 +179,7 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 await svc.upload_parse_validate(
     file=file,
     column_aliases=UserResource.field_mapping(),
-    validate_fn=validate_fn,
+    validate_fn=service_validate_fn,
     allowed_extensions=[".csv"],
     allowed_mime_types=["text/csv"],
 )
@@ -209,13 +211,13 @@ export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats
 ユーザーフレンドリーなエラーレスポンスを返します。
 `constraint_parser` モジュールは 5 つのデータベースの正確なエラー解析をサポートします：
 
-| データベース    | エラーパターン                                          | 抽出情報                    |
-| --------------- | ------------------------------------------------------- | --------------------------- |
-| PostgreSQL      | `Key (col)=(val) already exists.`                       | 列名、値、制約名            |
-| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`              | 値、制約名                  |
-| SQLite          | `UNIQUE constraint failed: table.col`                   | 列名                        |
-| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`              | 値、制約名                  |
-| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated`   | 制約名                      |
+| データベース    | エラーパターン                                        | 抽出情報         |
+| --------------- | ----------------------------------------------------- | ---------------- |
+| PostgreSQL      | `Key (col)=(val) already exists.`                     | 列名、値、制約名 |
+| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`            | 値、制約名       |
+| SQLite          | `UNIQUE constraint failed: table.col`                 | 列名             |
+| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`           | 値、制約名       |
+| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated` | 制約名           |
 
 パーサーをビジネスコードで直接使用することもできます：
 
@@ -234,6 +236,8 @@ if detail:
 アップロード、検証、プレビュー、コミットを含む最小構成の流れです。
 
 ```python
+from uuid import UUID
+
 from fastapi import APIRouter, UploadFile
 
 from fastapi_import_export import Importer, Resource
@@ -268,6 +272,14 @@ async def persist_fn(*, data, resource: type[Resource], allow_overwrite: bool = 
     return 100
 
 
+async def service_validate_fn(db, df, *, allow_overwrite: bool = False):
+    return df, []
+
+
+async def service_persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
+    return 100
+
+
 importer = Importer(
     parser=parse_fn,
     validator=validate_fn,
@@ -292,12 +304,12 @@ async def import_validate(file: UploadFile):
     return await svc.upload_parse_validate(
         file=file,
         column_aliases=UserResource.field_mapping(),
-        validate_fn=validate_fn,
+        validate_fn=service_validate_fn,
     )
 
 
 @router.get("/import/preview")
-async def import_preview(import_id: str, checksum: str, page: int = 1, page_size: int = 50):
+async def import_preview(import_id: UUID, checksum: str, page: int = 1, page_size: int = 50):
     return await svc.preview(
         import_id=import_id,
         checksum=checksum,
@@ -309,7 +321,7 @@ async def import_preview(import_id: str, checksum: str, page: int = 1, page_size
 
 @router.post("/import/commit")
 async def import_commit(body: ImportCommitRequest):
-    return await svc.commit(body=body, persist_fn=persist_fn)
+    return await svc.commit(body=body, persist_fn=service_persist_fn)
 ```
 
 ## FAQ

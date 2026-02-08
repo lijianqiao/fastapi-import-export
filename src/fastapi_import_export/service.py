@@ -601,7 +601,10 @@ class ImportExportService:
             result = await _maybe_await(self.redis_client.set(lock_key, lock_value, ex=self.lock_ttl_seconds, nx=True))
             lock_acquired = bool(result)
             if not lock_acquired:
-                raise ImportExportError(message="Import in progress, retry later / 导入正在执行，请稍后重试")
+                raise ImportExportError(
+                    message="Import in progress, retry later / 导入正在执行，请稍后重试",
+                    status_code=409,
+                )
 
         pl = _require_polars()
         valid_df = pl.read_parquet(paths.valid_parquet)

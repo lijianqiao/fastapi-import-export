@@ -18,13 +18,13 @@ Other languages: [README_CN.md](README_CN.md) | [README_JP.md](README_JP.md)
 
 ## Compatibility Matrix
 
-| Component  | Supported | Notes                                     |
-| ---------- | --------- | ----------------------------------------- |
-| Python     | 3.12-3.14 | Tested with async-first workflows.        |
-| FastAPI    | 0.128+    | Uses UploadFile and async endpoints.      |
-| Pydantic   | 2.x       | Schemas rely on BaseModel.                |
-| polars     | 1.x       | Optional parsing/validation backend.      |
-| openpyxl   | 3.x       | Excel parsing backend.                    |
+| Component | Supported | Notes                                |
+| --------- | --------- | ------------------------------------ |
+| Python    | 3.12-3.14 | Tested with async-first workflows.   |
+| FastAPI   | 0.128+    | Uses UploadFile and async endpoints. |
+| Pydantic  | 2.x       | Schemas rely on BaseModel.           |
+| polars    | 1.x       | Optional parsing/validation backend. |
+| openpyxl  | 3.x       | Excel parsing backend.               |
 
 ## Why Not django-import-export
 
@@ -124,6 +124,8 @@ importer = Importer(
 ### 3) FastAPI Integration
 
 ```python
+from uuid import UUID
+
 from fastapi import APIRouter, UploadFile
 
 
@@ -177,7 +179,7 @@ Per-call override:
 await svc.upload_parse_validate(
     file=file,
     column_aliases=UserResource.field_mapping(),
-    validate_fn=validate_fn,
+    validate_fn=service_validate_fn,
     allowed_extensions=[".csv"],
     allowed_mime_types=["text/csv"],
 )
@@ -209,13 +211,13 @@ When committing imported data, the library automatically detects unique constrai
 violations from the database and returns a user-friendly error response. The
 `constraint_parser` module supports precise error parsing for five databases:
 
-| Database        | Error Pattern                                          | Extracted Info              |
-| --------------- | ------------------------------------------------------ | --------------------------- |
-| PostgreSQL      | `Key (col)=(val) already exists.`                      | columns, values, constraint |
-| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`             | values, constraint          |
-| SQLite          | `UNIQUE constraint failed: table.col`                  | columns                     |
-| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`             | values, constraint          |
-| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated`  | constraint                  |
+| Database        | Error Pattern                                         | Extracted Info              |
+| --------------- | ----------------------------------------------------- | --------------------------- |
+| PostgreSQL      | `Key (col)=(val) already exists.`                     | columns, values, constraint |
+| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`            | values, constraint          |
+| SQLite          | `UNIQUE constraint failed: table.col`                 | columns                     |
+| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`           | values, constraint          |
+| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated` | constraint                  |
 
 You can also use the parser directly in your own code:
 
@@ -234,6 +236,8 @@ if detail:
 Below is a minimal end-to-end flow that supports upload, validate, preview, and commit.
 
 ```python
+from uuid import UUID
+
 from fastapi import APIRouter, UploadFile
 
 from fastapi_import_export import Importer, Resource
@@ -268,6 +272,14 @@ async def persist_fn(*, data, resource: type[Resource], allow_overwrite: bool = 
     return 100
 
 
+async def service_validate_fn(db, df, *, allow_overwrite: bool = False):
+    return df, []
+
+
+async def service_persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
+    return 100
+
+
 importer = Importer(
     parser=parse_fn,
     validator=validate_fn,
@@ -292,12 +304,12 @@ async def import_validate(file: UploadFile):
     return await svc.upload_parse_validate(
         file=file,
         column_aliases=UserResource.field_mapping(),
-        validate_fn=validate_fn,
+        validate_fn=service_validate_fn,
     )
 
 
 @router.get("/import/preview")
-async def import_preview(import_id: str, checksum: str, page: int = 1, page_size: int = 50):
+async def import_preview(import_id: UUID, checksum: str, page: int = 1, page_size: int = 50):
     return await svc.preview(
         import_id=import_id,
         checksum=checksum,
@@ -309,7 +321,7 @@ async def import_preview(import_id: str, checksum: str, page: int = 1, page_size
 
 @router.post("/import/commit")
 async def import_commit(body: ImportCommitRequest):
-    return await svc.commit(body=body, persist_fn=persist_fn)
+    return await svc.commit(body=body, persist_fn=service_persist_fn)
 ```
 
 ## FAQ

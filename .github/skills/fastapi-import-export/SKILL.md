@@ -40,29 +40,29 @@ large datasets.
 	- `field_aliases: dict[str, str]`
 	- `field_mapping() -> dict[str, str]`
 - `Importer`
-	- `import_data(file, resource, allow_overwrite=False) -> ImportResult`
-	- `parse(file, resource) -> TTable`
-	- `validate(data, resource, allow_overwrite) -> tuple[TTable, list[TError]]`
-	- `transform(data, resource) -> TTable`
-	- `persist(data, resource, allow_overwrite) -> int`
+	- `import_data(*, file, resource, allow_overwrite=False) -> ImportResult`
+	- `parse(*, file, resource) -> TTable`
+	- `validate(*, data, resource, allow_overwrite) -> tuple[TTable, list[TError]]`
+	- `transform(*, data, resource) -> TTable`
+	- `persist(*, data, resource, allow_overwrite) -> int`
 - `Exporter`
-	- `query(resource, params=None) -> TTable`
-	- `serialize(data, fmt) -> bytes`
-	- `render(data, fmt) -> ByteStream`
-	- `stream(resource, fmt, filename, media_type, params=None) -> ExportPayload`
+	- `query(*, resource, params=None) -> TTable`
+	- `serialize(*, data, fmt) -> bytes`
+	- `render(*, data, fmt) -> ByteStream`
+	- `stream(*, resource, fmt, filename, media_type, params=None) -> ExportPayload`
 - `ImportExportService`
-	- `upload_parse_validate(file, column_aliases, validate_fn, allow_overwrite=False, unique_fields=None, db_checks=None, allowed_extensions=None, allowed_mime_types=None) -> ImportValidateResponse`
-	- `preview(import_id, checksum, page, page_size, kind) -> ImportPreviewResponse`
-	- `commit(body, persist_fn, lock_namespace="import") -> ImportCommitResponse`
+	- `upload_parse_validate(*, file, column_aliases, validate_fn, allow_overwrite=False, unique_fields=None, db_checks=None, allowed_extensions=None, allowed_mime_types=None) -> ImportValidateResponse`
+	- `preview(*, import_id, checksum, page, page_size, kind) -> ImportPreviewResponse`
+	- `commit(*, body, persist_fn, lock_namespace="import") -> ImportCommitResponse`
 
 **Config and Facades**
 
 - `resolve_config(...) -> ImportExportConfig`
-- `parse_tabular_file(file_path, filename)`
+- `parse_tabular_file(file_path, *, filename)`
 - `normalize_columns(df, column_mapping)`
 - `dataframe_to_preview_rows(df)`
 - `collect_infile_duplicates(df, unique_fields)`
-- `run_db_checks(db, df, specs, allow_overwrite=False)`
+- `run_db_checks(*, db, df, specs, allow_overwrite=False)`
 
 **Errors**
 
@@ -101,7 +101,7 @@ large datasets.
 
 **ImportExportService.preview**
 
-- Required: `import_id`, `checksum`, `page`, `page_size`, `kind`
+- Required: `import_id` (UUID), `checksum`, `page`, `page_size`, `kind`
 - `kind` is `all` or `valid`
 - Returns: `ImportPreviewResponse` with `rows` (list of `ImportPreviewRow`)
 - Errors:
@@ -197,9 +197,9 @@ svc = ImportExportService(db=object())
 resp = await svc.upload_parse_validate(
     file=file,
     column_aliases=UserResource.field_mapping(),
-    validate_fn=validate_fn,
+	validate_fn=service_validate_fn,
 )
-commit = await svc.commit(body=commit_body, persist_fn=persist_fn)
+commit = await svc.commit(body=commit_body, persist_fn=service_persist_fn)
 ```
 
 **4) Upload allowlist configuration**

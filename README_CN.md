@@ -18,13 +18,13 @@ FastAPI 优先的导入导出工具库，保持业务模型解耦。
 
 ## 版本兼容矩阵
 
-| 组件       | 支持范围  | 说明                         |
-| ---------- | --------- | ---------------------------- |
-| Python     | 3.12-3.14 | 面向异步工作流测试。         |
-| FastAPI    | 0.128+    | 使用 UploadFile 与异步端点。 |
-| Pydantic   | 2.x       | 模型基于 BaseModel。         |
-| polars     | 1.x       | 可选解析/校验后端。          |
-| openpyxl   | 3.x       | Excel 解析后端。             |
+| 组件     | 支持范围  | 说明                         |
+| -------- | --------- | ---------------------------- |
+| Python   | 3.12-3.14 | 面向异步工作流测试。         |
+| FastAPI  | 0.128+    | 使用 UploadFile 与异步端点。 |
+| Pydantic | 2.x       | 模型基于 BaseModel。         |
+| polars   | 1.x       | 可选解析/校验后端。          |
+| openpyxl | 3.x       | Excel 解析后端。             |
 
 ## 为什么不是 django-import-export
 
@@ -124,6 +124,8 @@ importer = Importer(
 ### 3) FastAPI 接入示例
 
 ```python
+from uuid import UUID
+
 from fastapi import APIRouter, UploadFile
 
 
@@ -177,7 +179,7 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 await svc.upload_parse_validate(
     file=file,
     column_aliases=UserResource.field_mapping(),
-    validate_fn=validate_fn,
+    validate_fn=service_validate_fn,
     allowed_extensions=[".csv"],
     allowed_mime_types=["text/csv"],
 )
@@ -208,13 +210,13 @@ export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats
 提交导入数据时，库会自动检测数据库的唯一约束冲突并返回用户友好的错误响应。
 `constraint_parser` 模块支持五种数据库的精确错误解析：
 
-| 数据库          | 错误格式                                               | 提取信息                    |
-| --------------- | ------------------------------------------------------ | --------------------------- |
-| PostgreSQL      | `Key (col)=(val) already exists.`                      | 列名、值、约束名            |
-| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`             | 值、约束名                  |
-| SQLite          | `UNIQUE constraint failed: table.col`                  | 列名                        |
-| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`             | 值、约束名                  |
-| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated`  | 约束名                      |
+| 数据库          | 错误格式                                              | 提取信息         |
+| --------------- | ----------------------------------------------------- | ---------------- |
+| PostgreSQL      | `Key (col)=(val) already exists.`                     | 列名、值、约束名 |
+| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`            | 值、约束名       |
+| SQLite          | `UNIQUE constraint failed: table.col`                 | 列名             |
+| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`           | 值、约束名       |
+| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated` | 约束名           |
 
 也可以在业务代码中直接使用解析器：
 
@@ -233,6 +235,8 @@ if detail:
 下面是一个最小的端到端流程，覆盖上传、校验、预览、提交。
 
 ```python
+from uuid import UUID
+
 from fastapi import APIRouter, UploadFile
 
 from fastapi_import_export import Importer, Resource
@@ -267,6 +271,14 @@ async def persist_fn(*, data, resource: type[Resource], allow_overwrite: bool = 
     return 100
 
 
+async def service_validate_fn(db, df, *, allow_overwrite: bool = False):
+    return df, []
+
+
+async def service_persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
+    return 100
+
+
 importer = Importer(
     parser=parse_fn,
     validator=validate_fn,
@@ -291,12 +303,12 @@ async def import_validate(file: UploadFile):
     return await svc.upload_parse_validate(
         file=file,
         column_aliases=UserResource.field_mapping(),
-        validate_fn=validate_fn,
+        validate_fn=service_validate_fn,
     )
 
 
 @router.get("/import/preview")
-async def import_preview(import_id: str, checksum: str, page: int = 1, page_size: int = 50):
+async def import_preview(import_id: UUID, checksum: str, page: int = 1, page_size: int = 50):
     return await svc.preview(
         import_id=import_id,
         checksum=checksum,
@@ -308,7 +320,7 @@ async def import_preview(import_id: str, checksum: str, page: int = 1, page_size
 
 @router.post("/import/commit")
 async def import_commit(body: ImportCommitRequest):
-    return await svc.commit(body=body, persist_fn=persist_fn)
+    return await svc.commit(body=body, persist_fn=service_persist_fn)
 ```
 
 ## FAQ
