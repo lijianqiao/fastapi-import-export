@@ -25,7 +25,6 @@ FastAPI 优先的导入导出工具库，保持业务模型解耦。
 | Pydantic   | 2.x       | 模型基于 BaseModel。         |
 | polars     | 1.x       | 可选解析/校验后端。          |
 | openpyxl   | 3.x       | Excel 解析后端。             |
-| SQLAlchemy | 2.x       | 可选，仅用于完整性错误提示。 |
 
 ## 为什么不是 django-import-export
 
@@ -65,7 +64,6 @@ pip install fastapi-import-export[full]
 - polars: DataFrame 解析与校验后端。
 - xlsx: Excel 解析支持（openpyxl）。
 - storage: 文件系统存储后端。
-- sqlalchemy: SQLAlchemy 相关可选支持。
 - full: 全量可选依赖。
 
 ## 快速开始

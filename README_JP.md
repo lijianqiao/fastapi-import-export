@@ -25,7 +25,6 @@ FastAPI を優先したインポート/エクスポート用ユーティリテ�
 | Pydantic       | 2.x       | BaseModel を利用。                        |
 | polars         | 1.x       | 解析/検証のオプションバックエンド。       |
 | openpyxl       | 3.x       | Excel 解析バックエンド。                  |
-| SQLAlchemy     | 2.x       | 任意。整合性エラーのヒント用。            |
 
 ## django-import-export を使わない理由
 
@@ -65,7 +64,6 @@ pip install fastapi-import-export[full]
 - polars: DataFrame の解析/検証バックエンド。
 - xlsx: Excel 解析サポート（openpyxl）。
 - storage: ファイルシステム保存バックエンド。
-- sqlalchemy: SQLAlchemy 関連の任意サポート。
 - full: すべてのオプション依存。
 
 ## クイックスタート

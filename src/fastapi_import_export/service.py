@@ -71,11 +71,6 @@ from fastapi_import_export.storage import (
 from fastapi_import_export.typing import TableData
 from fastapi_import_export.validation import collect_infile_duplicates
 
-try:
-    from sqlalchemy.exc import IntegrityError
-except Exception:  # pragma: no cover / 覆盖忽略
-    IntegrityError = None  # type: ignore / 类型忽略
-
 
 class RedisLike(Protocol):
     """A minimal Redis client protocol used for locking.
@@ -241,43 +236,6 @@ async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
-
-
-def _format_integrity_error(exc: Exception) -> tuple[str, dict[str, Any] | None]:
-    """Format an IntegrityError exception.
-
-    格式化 IntegrityError 异常。
-
-    Currently only supports PostgreSQL error format.
-    当前仅支持 PostgreSQL 错误格式。
-
-    Args:
-        exc: The IntegrityError exception instance.
-            IntegrityError 异常实例。
-
-    Returns:
-        A tuple of (user-friendly message, optional details dict).
-            包含用户友好消息和可选详细信息字典的元组。
-    """
-    orig = getattr(exc, "orig", None)
-    constraint = getattr(orig, "constraint_name", None) or getattr(orig, "constraint", None)
-    detail = getattr(orig, "detail", None)
-    msg = str(exc)
-    details: dict[str, Any] = {}
-    if constraint:
-        details["constraint"] = str(constraint)
-    if detail:
-        details["detail"] = str(detail)
-    if "duplicate key value violates unique constraint" in msg:
-        user_msg = (
-            "Unique constraint conflict: import data duplicates existing keys (may include soft-deleted records)."
-            " / 唯一约束冲突：导入数据与现有数据存在重复键（可能包含软删除记录）。"
-        )
-        if details:
-            return user_msg, details
-        return user_msg, None
-    user_msg = "Database integrity error: import write failed. / 数据库完整性错误：导入写入失败。"
-    return user_msg, details or None
 
 
 def _parse_pg_unique_detail(text: str) -> dict[str, Any] | None:
@@ -937,17 +895,33 @@ class ImportExportService:
             meta["commit_error"] = str(exc)
             write_meta(paths, meta)
 
-            if IntegrityError is not None and isinstance(exc, IntegrityError):
-                _msg, extra = _format_integrity_error(exc)
-                detail_text = ""
-                orig = getattr(exc, "orig", None)
-                if orig is not None:
-                    detail_text = str(getattr(orig, "detail", "") or "")
-                _raise_unique_conflict(exc, valid_df, detail_text=detail_text, extra_details=extra)
-
+            # ORM-agnostic: use duck-typing to extract constraint details
+            # from any ORM (e.g. SQLAlchemy .orig, Tortoise, raw driver, etc.).
+            # ORM 无关：使用鸭子类型从任何 ORM 提取约束详情。
             text = str(exc)
-            if "duplicate key value violates unique constraint" in text:
-                _raise_unique_conflict(exc, valid_df)
+            detail_text = ""
+            extra_details: dict[str, Any] | None = None
+            orig = getattr(exc, "orig", None)
+            if orig is not None:
+                constraint = (
+                    getattr(orig, "constraint_name", None)
+                    or getattr(orig, "constraint", None)
+                )
+                detail = getattr(orig, "detail", None)
+                if constraint or detail:
+                    extra_details = {}
+                    if constraint:
+                        extra_details["constraint"] = str(constraint)
+                    if detail:
+                        extra_details["detail"] = str(detail)
+                        detail_text = str(detail)
+
+            if "duplicate key value violates unique constraint" in text or (
+                detail_text and "already exists" in detail_text
+            ):
+                _raise_unique_conflict(
+                    exc, valid_df, detail_text=detail_text, extra_details=extra_details
+                )
             raise
         finally:
             if self.redis_client is not None and lock_acquired:

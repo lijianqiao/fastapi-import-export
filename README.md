@@ -25,7 +25,6 @@ Other languages: [README_CN.md](README_CN.md) | [README_JP.md](README_JP.md)
 | Pydantic   | 2.x       | Schemas rely on BaseModel.                |
 | polars     | 1.x       | Optional parsing/validation backend.      |
 | openpyxl   | 3.x       | Excel parsing backend.                    |
-| SQLAlchemy | 2.x       | Optional, only for integrity error hints. |
 
 ## Why Not django-import-export
 
@@ -65,7 +64,6 @@ pip install fastapi-import-export[full]
 - polars: DataFrame parsing and validation backends.
 - xlsx: Excel parsing support (openpyxl).
 - storage: Filesystem storage backend helpers.
-- sqlalchemy: Optional SQLAlchemy-related helpers.
 - full: All optional dependencies.
 
 ## Quick Start

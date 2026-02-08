@@ -29,12 +29,10 @@ Issues = "https://github.com/lijianqiao/fastapi-import-export/issues"
 [project.optional-dependencies]
 polars = ["polars>=1.38.1"]
 xlsx = ["openpyxl>=3.1.5"]
-sqlalchemy = ["sqlalchemy>=2.0.46"]
 storage = ["uuid6>=2025.0.1"]
 full = [
     "polars>=1.38.1",
     "openpyxl>=3.1.5",
-    "sqlalchemy>=2.0.46",
     "uuid6>=2025.0.1",
 ]
 
