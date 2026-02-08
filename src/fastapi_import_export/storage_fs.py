@@ -233,7 +233,7 @@ def create_export_path(
     """
     cfg = config or resolve_config(base_dir=base_dir)
     ensure_dirs(config=cfg)
-    safe_name = Path(filename).name or "export"
+    safe_name = Path(str(filename).replace("\\", "/")).name or "export"
     return cfg.exports_dir / safe_name
 
 
