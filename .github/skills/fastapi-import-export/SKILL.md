@@ -187,6 +187,52 @@ payload = await exporter.stream(
 )
 ```
 
+**2.1) Exporter module usage**
+
+```python
+import csv
+import io
+from collections.abc import AsyncIterator
+
+from fastapi_import_export import Exporter, Resource
+
+
+class UserResource(Resource):
+	id: int | None
+	username: str
+
+
+async def query_fn(*, resource: type[Resource], params: dict | None = None):
+	return [
+		{"id": 1, "username": "alice"},
+		{"id": 2, "username": "bob"},
+	]
+
+
+async def serialize_fn(*, data: list[dict], fmt: str) -> bytes:
+	buf = io.StringIO()
+	writer = csv.DictWriter(buf, fieldnames=["id", "username"])
+	writer.writeheader()
+	writer.writerows(data)
+	return buf.getvalue().encode("utf-8")
+
+
+async def render_fn(*, data: bytes, fmt: str) -> AsyncIterator[bytes]:
+	async def _stream() -> AsyncIterator[bytes]:
+		yield data
+
+	return _stream()
+
+
+exporter = Exporter(query_fn=query_fn, serialize_fn=serialize_fn, render_fn=render_fn)
+payload = await exporter.stream(
+	resource=UserResource,
+	fmt="csv",
+	filename="users.csv",
+	media_type="text/csv",
+)
+```
+
 **3) Service workflow**
 
 ```python
