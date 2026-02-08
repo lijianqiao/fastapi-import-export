@@ -65,7 +65,7 @@ def _load_backend() -> Any:
         ) from exc
 
 
-def build_key_to_row_numbers(df, key_fields: Iterable[str]) -> dict[KeyTuple, list[int]]:
+def build_key_to_row_numbers(df: Any, key_fields: Iterable[str]) -> dict[KeyTuple, list[int]]:
     """
     Build mapping: key -> row_number list.
     构建映射：key -> 行号列表。
@@ -101,7 +101,7 @@ def build_db_conflict_errors(
 async def run_db_checks(
     *,
     db: Any,
-    df,
+    df: Any,
     specs: list[DbCheckSpec],
     allow_overwrite: bool = False,
 ) -> list[dict[str, Any]]:

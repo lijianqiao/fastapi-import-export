@@ -38,6 +38,9 @@ full = [
     "uuid6>=2025.0.1",
 ]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"

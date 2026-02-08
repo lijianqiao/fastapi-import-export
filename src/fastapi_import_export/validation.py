@@ -26,7 +26,7 @@ def _load_backend() -> Any:
         ) from exc
 
 
-def collect_infile_duplicates(df, unique_fields: Iterable[str]) -> list[dict[str, Any]]:
+def collect_infile_duplicates(df: Any, unique_fields: Iterable[str]) -> list[dict[str, Any]]:
     """
     Collect duplicate values within a file.
     收集文件内重复值。
@@ -45,7 +45,7 @@ def collect_infile_duplicates(df, unique_fields: Iterable[str]) -> list[dict[str
     return backend.collect_infile_duplicates(df, unique_fields)
 
 
-def build_conflict_errors(df, field: str, conflict_values: Iterable[str], *, reason: str) -> list[dict[str, Any]]:
+def build_conflict_errors(df: Any, field: str, conflict_values: Iterable[str], *, reason: str) -> list[dict[str, Any]]:
     """
     Build conflict error list.
     构建冲突错误列表。

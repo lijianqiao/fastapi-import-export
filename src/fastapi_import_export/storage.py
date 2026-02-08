@@ -7,8 +7,12 @@
 存储门面（可选文件系统后端）。
 """
 
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
+from fastapi_import_export.config import ImportExportConfig
 from fastapi_import_export.exceptions import ImportExportError
 
 
@@ -29,7 +33,7 @@ def _load_backend() -> Any:
         ) from exc
 
 
-def new_import_id():
+def new_import_id() -> UUID:
     """
     Create a new import job id.
     创建新的导入任务 ID。
@@ -47,7 +51,7 @@ def now_ts() -> int:
     return backend.now_ts()
 
 
-def ensure_dirs(*, config):
+def ensure_dirs(*, config: ImportExportConfig) -> None:
     """
     Ensure imports/exports directories exist.
     确保 imports/exports 目录存在。
@@ -56,7 +60,12 @@ def ensure_dirs(*, config):
     return backend.ensure_dirs(config=config)
 
 
-def get_import_paths(import_id, *, config=None, base_dir=None):
+def get_import_paths(
+    import_id: UUID,
+    *,
+    config: ImportExportConfig | None = None,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> Any:
     """
     Resolve all filesystem paths for a given import_id.
     为给定的导入任务 ID 解析所有文件系统路径。
@@ -65,7 +74,7 @@ def get_import_paths(import_id, *, config=None, base_dir=None):
     return backend.get_import_paths(import_id, config=config, base_dir=base_dir)
 
 
-def write_meta(paths, meta: dict[str, Any]) -> None:
+def write_meta(paths: Any, meta: dict[str, Any]) -> None:
     """
     Write meta.json for an import job.
     为导入任务写入 meta.json。
@@ -74,7 +83,7 @@ def write_meta(paths, meta: dict[str, Any]) -> None:
     return backend.write_meta(paths, meta)
 
 
-def read_meta(paths) -> dict[str, Any]:
+def read_meta(paths: Any) -> dict[str, Any]:
     """
     Read meta.json for an import job.
     读取导入任务的 meta.json。
@@ -83,7 +92,7 @@ def read_meta(paths) -> dict[str, Any]:
     return backend.read_meta(paths)
 
 
-def sha256_file(file_path) -> str:
+def sha256_file(file_path: Path) -> str:
     """
     Compute sha256 checksum of a file.
     计算文件的 sha256 校验和。
@@ -92,7 +101,7 @@ def sha256_file(file_path) -> str:
     return backend.sha256_file(file_path)
 
 
-def safe_unlink(path) -> None:
+def safe_unlink(path: Path) -> None:
     """
     Best-effort unlink (ignore errors).
     尽力删除文件（忽略错误）。
@@ -101,7 +110,7 @@ def safe_unlink(path) -> None:
     return backend.safe_unlink(path)
 
 
-def safe_rmtree(path) -> None:
+def safe_rmtree(path: Path) -> None:
     """
     Best-effort recursive delete for a directory (ignore errors).
     尽力递归删除目录（忽略错误）。
@@ -119,7 +128,12 @@ def delete_export_file(path: str) -> None:
     return backend.delete_export_file(path)
 
 
-def create_export_path(filename: str, *, config=None, base_dir=None):
+def create_export_path(
+    filename: str,
+    *,
+    config: ImportExportConfig | None = None,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> Path:
     """
     Create a safe path for an export file under exports directory.
     创建 exports 目录下的安全导出文件路径。
@@ -128,7 +142,12 @@ def create_export_path(filename: str, *, config=None, base_dir=None):
     return backend.create_export_path(filename, config=config, base_dir=base_dir)
 
 
-def cleanup_expired_imports(*, ttl_hours: int, config=None, base_dir=None) -> int:
+def cleanup_expired_imports(
+    *,
+    ttl_hours: int,
+    config: ImportExportConfig | None = None,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> int:
     """
     Cleanup expired import job directories.
     清理过期的导入任务目录。

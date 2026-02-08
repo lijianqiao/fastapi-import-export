@@ -26,7 +26,7 @@ def _load_backend() -> Any:
         ) from exc
 
 
-def parse_tabular_file(file_path: Path, *, filename: str):
+def parse_tabular_file(file_path: Path, *, filename: str) -> Any:
     """
     Parse a CSV/Excel file to ParsedTable.
     将 CSV/Excel 文件解析为 ParsedTable。
@@ -45,7 +45,7 @@ def parse_tabular_file(file_path: Path, *, filename: str):
     return backend.parse_tabular_file(file_path, filename=filename)
 
 
-def normalize_columns(df, column_mapping: dict[str, str]):
+def normalize_columns(df: Any, column_mapping: dict[str, str]) -> Any:
     """
     Normalize column names using a mapping table.
     基于列名映射表标准化列名。
@@ -64,7 +64,7 @@ def normalize_columns(df, column_mapping: dict[str, str]):
     return backend.normalize_columns(df, column_mapping)
 
 
-def dataframe_to_preview_rows(df):
+def dataframe_to_preview_rows(df: Any) -> list[dict[str, Any]]:
     """
     Convert a DataFrame to preview rows.
     将 DataFrame 转换为预览行。
