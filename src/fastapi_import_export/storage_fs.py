@@ -10,6 +10,7 @@
 import hashlib
 import json
 import os
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -193,23 +194,7 @@ def safe_rmtree(path: Path) -> None:
         path: Directory path.
         path: 目录路径。
     """
-    try:
-        if not path.exists():
-            return
-        for p in sorted(path.rglob("*"), reverse=True):
-            if p.is_file():
-                safe_unlink(p)
-            else:
-                try:
-                    p.rmdir()
-                except Exception:
-                    pass
-        try:
-            path.rmdir()
-        except Exception:
-            pass
-    except Exception:
-        pass
+    shutil.rmtree(path, ignore_errors=True)
 
 
 def delete_export_file(path: str) -> None:

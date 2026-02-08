@@ -130,8 +130,8 @@ def _env_get(*names: str) -> str | None:
     """
     for n in names:
         v = os.getenv(n)
-        if v is not None and str(v).strip():
-            return str(v).strip()
+        if v is not None and v.strip():
+            return v.strip()
     return None
 
 

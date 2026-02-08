@@ -33,7 +33,7 @@ class ExportPayload:
     stream: ByteStream
 
 
-class Exporter[TTable_co, TParams_contra]:
+class Exporter[TTable, TParams]:
     """
     Exporter base class.
     导出器基类。
@@ -45,8 +45,8 @@ class Exporter[TTable_co, TParams_contra]:
     def __init__(
         self,
         *,
-        query_fn: QueryFn[TTable_co, TParams_contra],
-        serialize_fn: SerializeFn[TTable_co],
+        query_fn: QueryFn[TTable, TParams],
+        serialize_fn: SerializeFn[TTable],
         render_fn: RenderFn,
     ) -> None:
         """
@@ -65,7 +65,7 @@ class Exporter[TTable_co, TParams_contra]:
         self._serialize_fn = serialize_fn
         self._render_fn = render_fn
 
-    async def query(self, *, resource: type[Resource], params: TParams_contra | None = None) -> TTable_co:
+    async def query(self, *, resource: type[Resource], params: TParams | None = None) -> TTable:
         """
         Query data for export.
         查询导出数据。
@@ -77,12 +77,12 @@ class Exporter[TTable_co, TParams_contra]:
                 可选查询参数。
 
         Returns:
-            TTable_co: Query result data.
-            TTable_co: 查询结果数据。
+            TTable: Query result data.
+            TTable: 查询结果数据。
         """
         return await self._query_fn(resource=resource, params=params)
 
-    async def serialize(self, *, data: TTable_co, fmt: str) -> bytes:
+    async def serialize(self, *, data: TTable, fmt: str) -> bytes:
         """
         Serialize data into bytes.
         将数据序列化为字节。
@@ -123,7 +123,7 @@ class Exporter[TTable_co, TParams_contra]:
         fmt: str,
         filename: str,
         media_type: str,
-        params: TParams_contra | None = None,
+        params: TParams | None = None,
     ) -> ExportPayload:
         """
         Run export lifecycle and return stream payload.

@@ -7,6 +7,7 @@
 基于 Polars 的 CSV/Excel 解析工具。
 """
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -61,8 +62,12 @@ def _read_excel_to_polars(file_path: Path, *, sheet_name: str | int | None = Non
         if callable(read_excel):
             df = read_excel(str(file_path), sheet_name=sheet_name)  # type: ignore[call-arg] / 类型忽略
             return cast(pl.DataFrame, df)
-    except Exception:
-        pass
+    except Exception as _exc:
+        warnings.warn(
+            f"polars.read_excel failed ({_exc!r}), falling back to openpyxl. "
+            f"/ polars.read_excel 失败（{_exc!r}），降级到 openpyxl。",
+            stacklevel=2,
+        )
 
     wb = load_workbook(file_path, read_only=True, data_only=True)
     try:
@@ -137,7 +142,7 @@ def parse_tabular_file(file_path: Path, *, filename: str) -> ParsedTable:
     else:
         raise ValueError(f"Unsupported file type: .{suffix} / 不支持的文件类型: .{suffix}")
 
-    df = df.with_columns([pl.all().cast(pl.Utf8, strict=False)])
+    df = df.with_columns(pl.all().cast(pl.Utf8, strict=False))
     df = df.with_row_index(name="row_number", offset=1)
     return ParsedTable(df=df, total_rows=df.height, columns=list(df.columns))
 
