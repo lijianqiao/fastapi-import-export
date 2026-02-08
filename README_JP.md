@@ -45,24 +45,46 @@ FastAPI を優先したインポート/エクスポート用ユーティリテ�
 
 ```bash
 pip install fastapi-import-export
+# または
+uv add fastapi-import-export
 ```
 
 よく使うオプション依存：
 
 ```bash
 pip install fastapi-import-export[polars,xlsx,storage]
+# または
+uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
 全オプション依存：
 
 ```bash
 pip install fastapi-import-export[full]
+# または
+uv add fastapi-import-export[full]
+```
+
+開発・ユニットテスト依存：
+
+```bash
+pip install fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+# または
+uv add --group dev fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+```
+
+E2E 統合テスト依存（任意、サンプルアプリ実行用）：
+
+```bash
+pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
+# または
+uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
 ```
 
 ## オプション依存の説明
 
 - polars: DataFrame の解析/検証バックエンド。
-- xlsx: Excel 解析サポート（openpyxl）。
+- xlsx: Excel 解析サポート（openpyxl + fastexcel）。
 - storage: ファイルシステム保存バックエンド。
 - full: すべてのオプション依存。
 
@@ -272,6 +294,8 @@ async def import_commit(body: ImportCommitRequest):
 
 ```bash
 pip install fastapi-import-export[polars,xlsx,storage]
+# または
+uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
 **ImportExportService がパッケージ直下から取得できないのはなぜですか？**
@@ -298,6 +322,22 @@ from fastapi_import_export.service import ImportExportService
 
 - ImportExportService と ExportResult はパッケージ直下からは公開されません。
   既存コードでは fastapi_import_export.service からインポートしてください。
+
+## テスト
+
+ユニットテストの実行（依存のインストールは [インストール](#インストール) を参照）：
+
+```bash
+pytest tests/ -v
+```
+
+E2E 統合テストの実行：
+
+```bash
+pytest examples/ -v
+```
+
+`examples/` ディレクトリには SQLAlchemy・SQLModel・Tortoise ORM の 3 つの完全な FastAPI サンプルアプリが含まれ、アップロード・プレビュー・コミット・エクスポートの HTTP エンドツーエンドフローをインメモリ SQLite で検証します。
 
 ## ライセンス
 

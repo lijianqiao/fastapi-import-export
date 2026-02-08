@@ -45,24 +45,46 @@ FastAPI 优先的导入导出工具库，保持业务模型解耦。
 
 ```bash
 pip install fastapi-import-export
+# 或
+uv add fastapi-import-export
 ```
 
 常用可选依赖：
 
 ```bash
 pip install fastapi-import-export[polars,xlsx,storage]
+# 或
+uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
 完整依赖：
 
 ```bash
 pip install fastapi-import-export[full]
+# 或
+uv add fastapi-import-export[full]
+```
+
+开发与单元测试依赖：
+
+```bash
+pip install fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+# 或
+uv add --group dev fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+```
+
+E2E 集成测试依赖（可选，用于运行示例应用）：
+
+```bash
+pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
+# 或
+uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
 ```
 
 ## 可选依赖说明
 
 - polars: DataFrame 解析与校验后端。
-- xlsx: Excel 解析支持（openpyxl）。
+- xlsx: Excel 解析支持（openpyxl + fastexcel）。
 - storage: 文件系统存储后端。
 - full: 全量可选依赖。
 
@@ -272,6 +294,8 @@ async def import_commit(body: ImportCommitRequest):
 
 ```bash
 pip install fastapi-import-export[polars,xlsx,storage]
+# 或
+uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
 **为什么包根不再导出 ImportExportService？**
@@ -298,6 +322,22 @@ from fastapi_import_export.service import ImportExportService
 
 - ImportExportService 和 ExportResult 不再从包根导出，
   如仍需使用请从 fastapi_import_export.service 导入。
+
+## 测试
+
+运行单元测试（依赖安装见 [安装](#安装)）：
+
+```bash
+pytest tests/ -v
+```
+
+运行 E2E 集成测试：
+
+```bash
+pytest examples/ -v
+```
+
+`examples/` 目录下包含 SQLAlchemy、SQLModel、Tortoise ORM 三套完整的 FastAPI 示例应用，覆盖上传、预览、提交落库、导出的全 HTTP 端到端流程，均使用 SQLite 内存数据库。
 
 ## 许可协议
 

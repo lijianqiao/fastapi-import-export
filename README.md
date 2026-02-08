@@ -45,24 +45,46 @@ Minimal (core only):
 
 ```bash
 pip install fastapi-import-export
+# or
+uv add fastapi-import-export
 ```
 
 Common optional deps:
 
 ```bash
 pip install fastapi-import-export[polars,xlsx,storage]
+# or
+uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
 All optional deps:
 
 ```bash
 pip install fastapi-import-export[full]
+# or
+uv add fastapi-import-export[full]
+```
+
+Development & unit-test deps:
+
+```bash
+pip install fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+# or
+uv add --group dev fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+```
+
+E2E integration-test deps (optional, for running example apps):
+
+```bash
+pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
+# or
+uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
 ```
 
 ## Extras
 
 - polars: DataFrame parsing and validation backends.
-- xlsx: Excel parsing support (openpyxl).
+- xlsx: Excel parsing support (openpyxl + fastexcel).
 - storage: Filesystem storage backend helpers.
 - full: All optional dependencies.
 
@@ -272,6 +294,8 @@ Install the matching extras, for example:
 
 ```bash
 pip install fastapi-import-export[polars,xlsx,storage]
+# or
+uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
 **Why is ImportExportService not exported from the package root?**
@@ -298,6 +322,22 @@ Use preview with `kind=all` to inspect the original parsed data.
 
 - ImportExportService and ExportResult are not exported from the package root.
   Import from fastapi_import_export.service if you still use them.
+
+## Testing
+
+Run the unit test suite (see [Install](#install) for dependency setup):
+
+```bash
+pytest tests/ -v
+```
+
+Run the E2E integration tests:
+
+```bash
+pytest examples/ -v
+```
+
+The `examples/` directory contains complete FastAPI applications for SQLAlchemy, SQLModel, and Tortoise ORM, each covering the full HTTP lifecycle: upload, preview, commit, and export against an in-memory SQLite database.
 
 ## License
 

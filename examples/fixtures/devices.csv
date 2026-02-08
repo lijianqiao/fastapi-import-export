@@ -1,0 +1,6 @@
+name,ip,location
+switch-01,192.168.1.1,机房A
+switch-02,192.168.1.2,机房A
+router-01,10.0.0.1,机房B
+ap-01,172.16.0.1,办公区
+firewall-01,10.0.0.254,机房B
