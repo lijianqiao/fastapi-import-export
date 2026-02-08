@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,7 +9,7 @@ description = "A reusable base library for importing and exporting data with Fas
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 license = "MIT"
-authors = [{ name = "li", email = "lijianqiao2906@live.com" }]
+authors = [{ name = "lijianqiao", email = "lijianqiao2906@live.com" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
@@ -20,10 +20,12 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Typing :: Typed",
 ]
+keywords = ["fastapi", "import", "export", "csv", "xlsx", "polars"]
 dependencies = ["fastapi>=0.128.4", "pydantic>=2.12.5"]
 
 [project.urls]
-github = "https://github.com/lijianqiao/fastapi-import-export"
+Homepage = "https://github.com/lijianqiao/fastapi-import-export"
+Source = "https://github.com/lijianqiao/fastapi-import-export"
 Issues = "https://github.com/lijianqiao/fastapi-import-export/issues"
 
 [project.optional-dependencies]
@@ -39,6 +41,9 @@ full = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+fastapi_import_export = ["py.typed"]
 
 [tool.ruff]
 line-length = 120
