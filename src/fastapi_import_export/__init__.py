@@ -46,7 +46,7 @@ from fastapi_import_export.storage import (
 )
 from fastapi_import_export.validation_core import ErrorCollector, RowContext
 
-__version__ = "0.1.1"
+__version__ = "0.1.2.post1"
 
 __all__ = [
     "__version__",
