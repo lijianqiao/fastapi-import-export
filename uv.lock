@@ -161,7 +161,6 @@ wheels = [
 
 [[package]]
 name = "fastapi-import-export"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -230,7 +229,7 @@ e2e = [
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.46" },
     { name = "sqlmodel", specifier = ">=0.0.24" },
-    { name = "tortoise-orm", extras = ["aiosqlite"], specifier = ">=0.25.0" },
+    { name = "tortoise-orm", specifier = ">=0.25.0" },
 ]
 
 [[package]]

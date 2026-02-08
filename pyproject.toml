@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastapi-import-export"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A reusable base library for importing and exporting data with FastAPI."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -38,6 +38,9 @@ full = [
     "fastexcel>=0.19.0",
     "uuid6>=2025.0.1",
 ]
+
+[tool.setuptools.dynamic]
+version = { attr = "fastapi_import_export.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -77,5 +80,5 @@ e2e = [
     "sqlalchemy[asyncio]>=2.0.46",
     "aiosqlite>=0.21.0",
     "sqlmodel>=0.0.24",
-    "tortoise-orm[aiosqlite]>=0.25.0",
+    "tortoise-orm>=0.25.0",
 ]

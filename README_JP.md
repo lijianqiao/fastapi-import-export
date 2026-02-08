@@ -76,9 +76,9 @@ uv add --group dev fastapi-import-export[full] pytest pytest-asyncio pytest-cov 
 E2E 統合テスト依存（任意、サンプルアプリ実行用）：
 
 ```bash
-pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
+pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel tortoise-orm
 # または
-uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
+uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel tortoise-orm
 ```
 
 ## オプション依存の説明

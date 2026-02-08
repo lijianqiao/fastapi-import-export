@@ -46,7 +46,10 @@ from fastapi_import_export.storage import (
 )
 from fastapi_import_export.validation_core import ErrorCollector, RowContext
 
+__version__ = "0.1.0"
+
 __all__ = [
+    "__version__",
     "BuildTemplateFn",
     "ConstraintDetail",
     "DbCheckFn",

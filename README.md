@@ -76,9 +76,9 @@ uv add --group dev fastapi-import-export[full] pytest pytest-asyncio pytest-cov 
 E2E integration-test deps (optional, for running example apps):
 
 ```bash
-pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
+pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel tortoise-orm
 # or
-uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel "tortoise-orm[aiosqlite]"
+uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel tortoise-orm
 ```
 
 ## Extras
