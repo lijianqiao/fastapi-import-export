@@ -37,7 +37,7 @@ FastAPI reuse. Python stdlib does not provide a built-in `UploadFile` type.
 import inspect
 import json
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -479,6 +479,8 @@ class ImportExportService:
         allow_overwrite: bool = False,
         unique_fields: list[str] | None = None,
         db_checks: list[DbCheckSpec] | None = None,
+        allowed_extensions: Iterable[str] | None = None,
+        allowed_mime_types: Iterable[str] | None = None,
     ) -> ImportValidateResponse:
         """Upload, parse, normalize columns, then validate.
 
@@ -509,6 +511,10 @@ class ImportExportService:
                 文件内唯一性检查字段列表。
             db_checks: Optional database check specs.
                 可选数据库校验规范列表。
+            allowed_extensions: Allowed upload file extensions.
+                允许上传的文件扩展名。
+            allowed_mime_types: Allowed upload MIME types.
+                允许上传的 MIME 类型。
 
         Returns:
             ImportValidateResponse: Validation response.
@@ -517,6 +523,8 @@ class ImportExportService:
         Raises:
             ImportExportError: When uploaded file is too large.
                 上传文件过大时抛出。
+            ImportExportError: When file extension or content type is not allowed.
+                文件扩展名或内容类型不被允许时抛出。
         """
         import_id = new_import_id()
         paths = get_import_paths(import_id, config=self.config)
@@ -526,6 +534,25 @@ class ImportExportService:
             filename = file.filename or "upload"
             content_type = file.content_type
             ext = Path(filename).suffix.lower()
+            allowed_exts = {
+                v.strip().lower() for v in (allowed_extensions or self.config.allowed_extensions) if str(v).strip()
+            }
+            allowed_mimes = {
+                v.strip().lower() for v in (allowed_mime_types or self.config.allowed_mime_types) if str(v).strip()
+            }
+            if allowed_exts and ext not in allowed_exts:
+                raise ImportExportError(
+                    message=f"Unsupported file extension: {ext} / 不支持的文件扩展名: {ext}",
+                    status_code=415,
+                    error_code="unsupported_media_type",
+                )
+            content_type_norm = str(content_type or "").strip().lower()
+            if allowed_mimes and content_type_norm and content_type_norm not in allowed_mimes:
+                raise ImportExportError(
+                    message=(f"Unsupported content type: {content_type_norm} / 不支持的内容类型: {content_type_norm}"),
+                    status_code=415,
+                    error_code="unsupported_media_type",
+                )
             original_path = paths.original.with_suffix(ext)
 
             size = 0
@@ -536,7 +563,7 @@ class ImportExportService:
                         break
                     size += len(chunk)
                     if size > int(self.max_upload_mb) * 1024 * 1024:
-                        raise ImportExportError(message="File too large / 上传文件过大")
+                        raise ImportExportError(message="File too large / 上传文件过大", status_code=413)
                     out.write(chunk)
 
             checksum = sha256_file(original_path)
@@ -737,6 +764,12 @@ class ImportExportService:
                     details=errors[:200],
                 )
 
+        if not paths.valid_parquet.exists():
+            raise ImportExportError(
+                message="Validated data is missing; re-validate or re-upload / 校验数据缺失，请重新校验或重新上传",
+                status_code=409,
+            )
+
         lock_key = f"{lock_namespace}:lock:{body.import_id}"
         lock_acquired = False
         if self.redis_client is not None:
@@ -746,7 +779,7 @@ class ImportExportService:
                 raise ImportExportError(message="Import in progress, retry later / 导入正在执行，请稍后重试")
 
         pl = _require_polars()
-        valid_df = pl.read_parquet(paths.valid_parquet) if paths.valid_parquet.exists() else pl.DataFrame()
+        valid_df = pl.read_parquet(paths.valid_parquet)
         rollback = getattr(self.db, "rollback", None)
         if callable(rollback):
             try:

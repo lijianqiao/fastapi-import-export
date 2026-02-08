@@ -13,14 +13,14 @@ Other languages: [README_CN.md](README_CN.md) | [README_JP.md](README_JP.md)
 
 ## Requirements
 
-- Python 3.14+
+- Python 3.12-3.14
 - FastAPI 0.128+
 
 ## Compatibility Matrix
 
 | Component  | Supported | Notes                                     |
 | ---------- | --------- | ----------------------------------------- |
-| Python     | 3.14+     | Tested with async-first workflows.        |
+| Python     | 3.12-3.14 | Tested with async-first workflows.        |
 | FastAPI    | 0.128+    | Uses UploadFile and async endpoints.      |
 | Pydantic   | 2.x       | Schemas rely on BaseModel.                |
 | polars     | 1.x       | Optional parsing/validation backend.      |
@@ -146,6 +146,42 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 
 - parse/storage/validation/db_validation are lazy-loaded facades.
 - Missing extras raise ImportExportError with a clear install hint.
+
+## Upload Allowlist Configuration
+
+Priority order: per-call override > resolve_config parameters > environment variables > defaults.
+
+Per-call override:
+
+```python
+await svc.upload_parse_validate(
+    file=file,
+    column_aliases=UserResource.field_mapping(),
+    validate_fn=validate_fn,
+    allowed_extensions=[".csv"],
+    allowed_mime_types=["text/csv"],
+)
+```
+
+Config-level override:
+
+```python
+from fastapi_import_export.config import resolve_config
+
+
+cfg = resolve_config(
+    allowed_extensions=[".csv", ".xlsx"],
+    allowed_mime_types=["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+)
+svc = ImportExportService(db=object(), config=cfg)
+```
+
+Environment variable example:
+
+```bash
+export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
+export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+```
 
 ## End-to-End Example
 

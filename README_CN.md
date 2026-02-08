@@ -13,19 +13,19 @@ FastAPI 优先的导入导出工具库，保持业务模型解耦。
 
 ## 环境要求
 
-- Python 3.14+
+- Python 3.12-3.14
 - FastAPI 0.128+
 
 ## 版本兼容矩阵
 
-| 组件       | 支持范围 | 说明                         |
-| ---------- | -------- | ---------------------------- |
-| Python     | 3.14+    | 面向异步工作流测试。         |
-| FastAPI    | 0.128+   | 使用 UploadFile 与异步端点。 |
-| Pydantic   | 2.x      | 模型基于 BaseModel。         |
-| polars     | 1.x      | 可选解析/校验后端。          |
-| openpyxl   | 3.x      | Excel 解析后端。             |
-| SQLAlchemy | 2.x      | 可选，仅用于完整性错误提示。 |
+| 组件       | 支持范围  | 说明                         |
+| ---------- | --------- | ---------------------------- |
+| Python     | 3.12-3.14 | 面向异步工作流测试。         |
+| FastAPI    | 0.128+    | 使用 UploadFile 与异步端点。 |
+| Pydantic   | 2.x       | 模型基于 BaseModel。         |
+| polars     | 1.x       | 可选解析/校验后端。          |
+| openpyxl   | 3.x       | Excel 解析后端。             |
+| SQLAlchemy | 2.x       | 可选，仅用于完整性错误提示。 |
 
 ## 为什么不是 django-import-export
 
@@ -146,6 +146,42 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 
 - parse/storage/validation/db_validation 为惰性加载门面。
 - 缺少可选依赖时会抛出 ImportExportError 并提示安装方式。
+
+## 上传白名单配置
+
+优先级顺序：单次调用覆盖 > resolve_config 参数 > 环境变量 > 默认值。
+
+单次调用覆盖：
+
+```python
+await svc.upload_parse_validate(
+    file=file,
+    column_aliases=UserResource.field_mapping(),
+    validate_fn=validate_fn,
+    allowed_extensions=[".csv"],
+    allowed_mime_types=["text/csv"],
+)
+```
+
+配置层覆盖：
+
+```python
+from fastapi_import_export.config import resolve_config
+
+
+cfg = resolve_config(
+    allowed_extensions=[".csv", ".xlsx"],
+    allowed_mime_types=["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+)
+svc = ImportExportService(db=object(), config=cfg)
+```
+
+环境变量示例：
+
+```bash
+export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
+export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+```
 
 ## 端到端示例
 

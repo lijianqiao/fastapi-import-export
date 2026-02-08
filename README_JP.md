@@ -13,19 +13,19 @@ FastAPI を優先したインポート/エクスポート用ユーティリテ�
 
 ## 動作環境
 
-- Python 3.14+
+- Python 3.12-3.14
 - FastAPI 0.128+
 
 ## 互換性マトリクス
 
-| コンポーネント | 対応範囲 | 補足                                      |
-| -------------- | -------- | ----------------------------------------- |
-| Python         | 3.14+    | 非同期ワークフロー向けに検証。            |
-| FastAPI        | 0.128+   | UploadFile と非同期エンドポイントを使用。 |
-| Pydantic       | 2.x      | BaseModel を利用。                        |
-| polars         | 1.x      | 解析/検証のオプションバックエンド。       |
-| openpyxl       | 3.x      | Excel 解析バックエンド。                  |
-| SQLAlchemy     | 2.x      | 任意。整合性エラーのヒント用。            |
+| コンポーネント | 対応範囲  | 補足                                      |
+| -------------- | --------- | ----------------------------------------- |
+| Python         | 3.12-3.14 | 非同期ワークフロー向けに検証。            |
+| FastAPI        | 0.128+    | UploadFile と非同期エンドポイントを使用。 |
+| Pydantic       | 2.x       | BaseModel を利用。                        |
+| polars         | 1.x       | 解析/検証のオプションバックエンド。       |
+| openpyxl       | 3.x       | Excel 解析バックエンド。                  |
+| SQLAlchemy     | 2.x       | 任意。整合性エラーのヒント用。            |
 
 ## django-import-export を使わない理由
 
@@ -146,6 +146,42 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 
 - parse/storage/validation/db_validation は遅延読み込みのファサード。
 - オプション依存が不足すると ImportExportError を送出し、インストール手順を提示。
+
+## アップロード許可リスト設定
+
+優先順位: 呼び出し単位の上書き > resolve_config の引数 > 環境変数 > 既定値。
+
+呼び出し単位の上書き：
+
+```python
+await svc.upload_parse_validate(
+    file=file,
+    column_aliases=UserResource.field_mapping(),
+    validate_fn=validate_fn,
+    allowed_extensions=[".csv"],
+    allowed_mime_types=["text/csv"],
+)
+```
+
+設定レベルの上書き：
+
+```python
+from fastapi_import_export.config import resolve_config
+
+
+cfg = resolve_config(
+    allowed_extensions=[".csv", ".xlsx"],
+    allowed_mime_types=["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+)
+svc = ImportExportService(db=object(), config=cfg)
+```
+
+環境変数の例：
+
+```bash
+export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
+export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+```
 
 ## エンドツーエンド例
 
