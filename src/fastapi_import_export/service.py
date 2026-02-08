@@ -12,7 +12,7 @@ Reusable import/export orchestration service for FastAPI projects.
 This module provides a domain-agnostic service class `ImportExportService` that
 implements a common import/export workflow:
 
-该模块提供了一个与域无关的服务类“ImportExportService”
+该模块提供了一个与域无关的服务类"ImportExportService"
 实现通用的导入/导出工作流程：
 
         - Export a dataset to CSV/XLSX.
@@ -36,17 +36,16 @@ FastAPI reuse. Python stdlib does not provide a built-in `UploadFile` type.
 
 import inspect
 import json
-import re
-from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import UploadFile
 
 from fastapi_import_export.config import ImportExportConfig, resolve_config
+from fastapi_import_export.constraint_parser import is_unique_constraint_error, raise_unique_conflict
 from fastapi_import_export.db_validation import DbCheckSpec, run_db_checks
 from fastapi_import_export.exceptions import ImportExportError
 from fastapi_import_export.parse import normalize_columns, parse_tabular_file
@@ -58,6 +57,14 @@ from fastapi_import_export.schemas import (
     ImportPreviewRow,
     ImportValidateResponse,
 )
+from fastapi_import_export.service_types import (
+    BuildTemplateFn,
+    ExportDfFn,
+    ExportResult,
+    RedisLike,
+    ServicePersistFn,
+    ServiceValidateFn,
+)
 from fastapi_import_export.storage import (
     create_export_path,
     get_import_paths,
@@ -68,130 +75,7 @@ from fastapi_import_export.storage import (
     sha256_file,
     write_meta,
 )
-from fastapi_import_export.typing import TableData
 from fastapi_import_export.validation import collect_infile_duplicates
-
-
-class RedisLike(Protocol):
-    """A minimal Redis client protocol used for locking.
-
-    用于锁的最小 Redis 客户端协议。
-
-    The protocol is deliberately permissive to support various clients
-    (e.g. redis-py asyncio client). Methods may return either direct values
-    or awaitables.
-
-    为了兼容不同 Redis 客户端，本协议刻意放宽签名限制；方法可以返回普通值
-    或可 await 的对象。
-    """
-
-    def set(self, *args: Any, **kwargs: Any) -> Any:
-        """Set a key-value pair.
-
-        设置键值对。
-        """
-        ...
-
-    def get(self, *args: Any, **kwargs: Any) -> Any:
-        """Get a key value.
-
-        获取键值。
-        """
-        ...
-
-    def delete(self, *args: Any, **kwargs: Any) -> Any:
-        """Delete a key.
-
-        删除键。
-        """
-        ...
-
-
-ExportDfFn = Callable[[Any], Awaitable[TableData]]
-BuildTemplateFn = Callable[[Path], None]
-
-
-class ServiceValidateFn(Protocol):
-    """Service-level validation handler signature.
-
-    服务层校验处理函数签名。
-
-    Your domain should implement this to:
-        - Check required columns.
-          检查必需列。
-        - Validate formats, enums, references.
-          校验格式/枚举/引用关系等。
-        - Optionally skip "already exists" errors when allow_overwrite=True.
-          allow_overwrite=True 时可跳过“已存在”类错误。
-
-    Note:
-        This protocol is specific to ``ImportExportService``.
-        For the generic ``Importer`` lifecycle, see ``fastapi_import_export.typing.ValidateFn``.
-
-        此协议专用于 ``ImportExportService``。
-        通用 ``Importer`` 生命周期请参考 ``fastapi_import_export.typing.ValidateFn``。
-
-    Returns:
-        valid_df: rows allowed to be imported (should keep `row_number`).
-            可导入行（建议保留 `row_number`）。
-        errors: list of error dicts, each should contain row_number/field/message.
-            错误列表（建议包含 row_number/field/message）。
-    """
-
-    async def __call__(
-        self,
-        db: Any,
-        df: TableData,
-        *,
-        allow_overwrite: bool = False,
-    ) -> tuple[TableData, list[dict[str, Any]]]: ...
-
-
-class ServicePersistFn(Protocol):
-    """Service-level persistence handler signature.
-
-    服务层落库处理函数签名。
-
-    Your domain should implement this to insert/update rows in a single
-    transaction (recommended) and return the number of affected rows.
-
-    业务侧实现落库逻辑（建议单事务），并返回实际写入（新增/更新）的行数。
-
-    Note:
-        This protocol is specific to ``ImportExportService``.
-        For the generic ``Importer`` lifecycle, see ``fastapi_import_export.typing.PersistFn``.
-
-        此协议专用于 ``ImportExportService``。
-        通用 ``Importer`` 生命周期请参考 ``fastapi_import_export.typing.PersistFn``。
-    """
-
-    async def __call__(
-        self,
-        db: Any,
-        valid_df: TableData,
-        *,
-        allow_overwrite: bool = False,
-    ) -> int: ...
-
-
-@dataclass(frozen=True, slots=True)
-class ExportResult:
-    """Result of an export/template build.
-
-    导出/模板生成结果。
-
-    Attributes:
-        path: File path on disk.
-            文件路径。
-        filename: Suggested download filename.
-            建议的下载文件名。
-        media_type: HTTP media type string.
-            HTTP 媒体类型字符串。
-    """
-
-    path: Path
-    filename: str
-    media_type: str
 
 
 def _require_polars() -> Any:
@@ -236,150 +120,6 @@ async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
     return value
-
-
-def _parse_pg_unique_detail(text: str) -> dict[str, Any] | None:
-    """Parse PostgreSQL unique constraint detail message.
-
-    解析 PostgreSQL 唯一约束详细错误信息。
-
-    Currently only supports PostgreSQL error format
-    (``Key (col)=(val) already exists.``).
-    MySQL / SQLite / other databases are not supported.
-
-    当前仅支持 PostgreSQL 错误格式（``Key (col)=(val) already exists.``）。
-    MySQL / SQLite / 其他数据库暂不支持。
-
-    Args:
-        text: The detail message text.
-            详细错误信息文本。
-
-    Returns:
-        A dict with "columns" and "values" keys, or None if not matched.
-            包含 "columns" 和 "values" 键的字典，或 None（未匹配）。
-    """
-    m = re.search(r"Key\s+\((?P<cols>[^)]+)\)=\((?P<vals>[^)]+)\)\s+already exists\.", text)
-    if not m:
-        return None
-    cols = [c.strip() for c in str(m.group("cols")).split(",") if c.strip()]
-    vals = [v.strip() for v in str(m.group("vals")).split(",") if v.strip()]
-    if len(cols) != len(vals):
-        return {"columns": cols, "values": vals}
-    return {"columns": cols, "values": vals}
-
-
-def _find_conflict_row_numbers(df: TableData, *, columns: list[str], values: list[str], limit: int = 50) -> list[int]:
-    """Find row numbers of rows with given column values.
-
-    查找给定列值的行号。
-
-    Args:
-        df: The DataFrame to search.
-            要搜索的 DataFrame。
-        columns: List of column names to match.
-            要匹配的列名列表。
-        values: List of values to match.
-            要匹配的值列表。
-        limit: Maximum number of row numbers to return.
-            返回的最大行号数量。
-
-    Returns:
-        A list of row numbers where the specified columns have the given values.
-            指定列值匹配的行号列表。
-    """
-    pl = _require_polars()
-    if df.is_empty():
-        return []
-    # Ensure row_number column exists / 确保 row_number 列存在
-    if "row_number" not in df.columns:
-        return []
-    for c in columns:
-        if c not in df.columns:
-            return []
-
-    exprs: list[Any] = []
-    for c, v in zip(columns, values, strict=False):
-        exprs.append(pl.col(c).cast(pl.Utf8, strict=False) == v)
-    if not exprs:
-        return []
-    filt = exprs[0]
-    for e in exprs[1:]:
-        filt = filt & e
-    matched = df.filter(filt).select("row_number")
-    if matched.is_empty():
-        return []
-    return [int(x) for x in matched.get_column("row_number").to_list()[:limit]]
-
-
-def _raise_unique_conflict(
-    exc: Exception,
-    valid_df: TableData,
-    *,
-    detail_text: str = "",
-    extra_details: dict[str, Any] | None = None,
-) -> None:
-    """Try to parse a unique-constraint error and raise a user-friendly ImportExportError.
-
-    尝试解析唯一约束错误并抛出用户友好的 ImportExportError。
-
-    Currently only supports PostgreSQL error format.
-    当前仅支持 PostgreSQL 错误格式。
-
-    If the error text contains parseable column/value info, this function raises
-    ``ImportExportError`` with conflict details and affected row numbers.
-    Otherwise it raises a generic unique-conflict ``ImportExportError``.
-
-    若错误文本包含可解析的列/值信息，则抛出带有冲突详情和受影响行号的
-    ``ImportExportError``；否则抛出通用唯一冲突 ``ImportExportError``。
-
-    Args:
-        exc: The original exception.
-            原始异常。
-        valid_df: DataFrame of valid rows (used to locate conflict row numbers).
-            有效行 DataFrame（用于定位冲突行号）。
-        detail_text: Optional detail text to parse (e.g. from PG orig.detail).
-            可选的详细错误文本（如 PG orig.detail）。
-        extra_details: Optional extra details to merge into the error payload.
-            可选的额外详情字典，会合并到错误载荷中。
-
-    Raises:
-        ImportExportError: Always raised with appropriate conflict information.
-            始终抛出，并附带相应的冲突信息。
-    """
-    text = str(exc)
-    parsed = (
-        (_parse_pg_unique_detail(detail_text) if detail_text else None)
-        or _parse_pg_unique_detail(text)
-    )
-    if parsed and "columns" in parsed and "values" in parsed:
-        row_numbers = _find_conflict_row_numbers(
-            valid_df, columns=parsed["columns"], values=parsed["values"]
-        )
-        payload: dict[str, Any] = {
-            "columns": parsed["columns"],
-            "values": parsed["values"],
-            "row_numbers": row_numbers,
-        }
-        if extra_details:
-            payload.update(extra_details)
-        conflict = ", ".join(
-            f"{c}={v}" for c, v in zip(parsed["columns"], parsed["values"], strict=False)
-        )
-        raise ImportExportError(
-            message=(
-                f"Unique constraint conflict: {conflict} already exists (may include soft-deleted records)."
-                f" / 唯一约束冲突：{conflict} 已存在（可能包含软删除记录）。"
-            ),
-            details=payload,
-        ) from exc
-
-    raise ImportExportError(
-        message=(
-            "Unique constraint conflict: import data duplicates existing keys (may include soft-deleted records)."
-            " / 唯一约束冲突：导入数据与现有数据存在重复键（可能包含软删除记录）。"
-        ),
-        details=extra_details or {"error": text},
-    ) from exc
 
 
 class ImportExportService:
@@ -858,9 +598,7 @@ class ImportExportService:
         lock_value = str(new_import_id())
         lock_acquired = False
         if self.redis_client is not None:
-            result = await _maybe_await(
-                self.redis_client.set(lock_key, lock_value, ex=self.lock_ttl_seconds, nx=True)
-            )
+            result = await _maybe_await(self.redis_client.set(lock_key, lock_value, ex=self.lock_ttl_seconds, nx=True))
             lock_acquired = bool(result)
             if not lock_acquired:
                 raise ImportExportError(message="Import in progress, retry later / 导入正在执行，请稍后重试")
@@ -903,10 +641,7 @@ class ImportExportService:
             extra_details: dict[str, Any] | None = None
             orig = getattr(exc, "orig", None)
             if orig is not None:
-                constraint = (
-                    getattr(orig, "constraint_name", None)
-                    or getattr(orig, "constraint", None)
-                )
+                constraint = getattr(orig, "constraint_name", None) or getattr(orig, "constraint", None)
                 detail = getattr(orig, "detail", None)
                 if constraint or detail:
                     extra_details = {}
@@ -916,12 +651,8 @@ class ImportExportService:
                         extra_details["detail"] = str(detail)
                         detail_text = str(detail)
 
-            if "duplicate key value violates unique constraint" in text or (
-                detail_text and "already exists" in detail_text
-            ):
-                _raise_unique_conflict(
-                    exc, valid_df, detail_text=detail_text, extra_details=extra_details
-                )
+            if is_unique_constraint_error(text, detail_text=detail_text):
+                raise_unique_conflict(exc, valid_df, detail_text=detail_text, extra_details=extra_details)
             raise
         finally:
             if self.redis_client is not None and lock_acquired:

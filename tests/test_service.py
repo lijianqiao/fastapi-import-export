@@ -17,12 +17,11 @@ import pytest
 from fastapi_import_export.config import ImportExportConfig
 from fastapi_import_export.exceptions import ImportExportError
 from fastapi_import_export.schemas import ImportCommitRequest
+from fastapi_import_export.constraint_parser import find_conflict_row_numbers, parse_unique_constraint_error
 from fastapi_import_export.service import (
     ExportResult,
     ImportExportService,
-    _find_conflict_row_numbers,
     _maybe_await,
-    _parse_pg_unique_detail,
 )
 from fastapi_import_export.storage_fs import (
     ensure_dirs,
@@ -94,34 +93,34 @@ class TestMaybeAwait:
 
 
 class TestParsePgUniqueDetail:
-    """Tests for _parse_pg_unique_detail.
-    _parse_pg_unique_detail 测试。
+    """Tests for parse_unique_constraint_error (PG format).
+    parse_unique_constraint_error 测试（PG 格式）。
     """
 
     def test_pg_format(self) -> None:
         """Parse PG format / 解析 PG 格式。"""
         text = "Key (email)=(alice@b.com) already exists."
-        result = _parse_pg_unique_detail(text)
+        result = parse_unique_constraint_error(text)
         assert result is not None
-        assert result["columns"] == ["email"]
-        assert result["values"] == ["alice@b.com"]
+        assert result.columns == ["email"]
+        assert result.values == ["alice@b.com"]
 
     def test_composite_key(self) -> None:
         """Parse composite key / 解析复合 key。"""
         text = "Key (name, email)=(alice, alice@b.com) already exists."
-        result = _parse_pg_unique_detail(text)
+        result = parse_unique_constraint_error(text)
         assert result is not None
-        assert len(result["columns"]) == 2
+        assert len(result.columns) == 2
 
     def test_non_pg_format(self) -> None:
         """Non-PG format returns None / 非 PG 格式返回 None。"""
-        result = _parse_pg_unique_detail("some random error text")
+        result = parse_unique_constraint_error("some random error text")
         assert result is None
 
 
 class TestFindConflictRowNumbers:
-    """Tests for _find_conflict_row_numbers.
-    _find_conflict_row_numbers 测试。
+    """Tests for find_conflict_row_numbers.
+    find_conflict_row_numbers 测试。
     """
 
     def test_finds_rows(self) -> None:
@@ -132,25 +131,25 @@ class TestFindConflictRowNumbers:
                 "email": ["a@b.com", "c@d.com", "a@b.com"],
             }
         )
-        result = _find_conflict_row_numbers(df, columns=["email"], values=["a@b.com"])
+        result = find_conflict_row_numbers(df, columns=["email"], values=["a@b.com"])
         assert result == [1, 3]
 
     def test_empty_df(self) -> None:
         """Empty DataFrame returns empty / 空 DataFrame 返回空列表。"""
         df = pl.DataFrame({"row_number": [], "email": []}).cast({"row_number": pl.Int64, "email": pl.Utf8})
-        result = _find_conflict_row_numbers(df, columns=["email"], values=["a"])
+        result = find_conflict_row_numbers(df, columns=["email"], values=["a"])
         assert result == []
 
     def test_column_not_exists(self) -> None:
         """Missing column returns empty / 列不存在返回空列表。"""
         df = pl.DataFrame({"row_number": [1], "name": ["alice"]})
-        result = _find_conflict_row_numbers(df, columns=["email"], values=["a"])
+        result = find_conflict_row_numbers(df, columns=["email"], values=["a"])
         assert result == []
 
     def test_missing_row_number_column(self) -> None:
         """Missing row_number column returns empty / 缺少 row_number 列返回空列表。"""
         df = pl.DataFrame({"email": ["a@b.com"]})
-        result = _find_conflict_row_numbers(df, columns=["email"], values=["a@b.com"])
+        result = find_conflict_row_numbers(df, columns=["email"], values=["a@b.com"])
         assert result == []
 
 

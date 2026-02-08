@@ -203,6 +203,31 @@ export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
 export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ```
 
+## 唯一约束冲突检测
+
+提交导入数据时，库会自动检测数据库的唯一约束冲突并返回用户友好的错误响应。
+`constraint_parser` 模块支持五种数据库的精确错误解析：
+
+| 数据库          | 错误格式                                               | 提取信息                    |
+| --------------- | ------------------------------------------------------ | --------------------------- |
+| PostgreSQL      | `Key (col)=(val) already exists.`                      | 列名、值、约束名            |
+| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`             | 值、约束名                  |
+| SQLite          | `UNIQUE constraint failed: table.col`                  | 列名                        |
+| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`             | 值、约束名                  |
+| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated`  | 约束名                      |
+
+也可以在业务代码中直接使用解析器：
+
+```python
+from fastapi_import_export import ConstraintDetail, parse_unique_constraint_error
+
+detail: ConstraintDetail | None = parse_unique_constraint_error(
+    str(exc), detail_text=getattr(getattr(exc, "orig", None), "detail", "")
+)
+if detail:
+    print(detail.db_type, detail.columns, detail.values)
+```
+
 ## 端到端示例
 
 下面是一个最小的端到端流程，覆盖上传、校验、预览、提交。
@@ -298,14 +323,6 @@ pip install fastapi-import-export[polars,xlsx,storage]
 uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
-**为什么包根不再导出 ImportExportService？**
-
-请从 service 模块导入：
-
-```python
-from fastapi_import_export.service import ImportExportService
-```
-
 **为什么校验后数据被过滤？**
 
 服务类会将校验失败的行从 `valid.parquet` 中剔除。
@@ -317,11 +334,6 @@ from fastapi_import_export.service import ImportExportService
 - **checksum 不匹配**：确保客户端使用 `upload_parse_validate` 返回的 checksum。
 - **missing_dependency**：安装解析/存储/校验对应的 extras。
 - **db_conflict**：检查唯一约束与软删除记录是否导致冲突。
-
-## 迁移提示
-
-- ImportExportService 和 ExportResult 不再从包根导出，
-  如仍需使用请从 fastapi_import_export.service 导入。
 
 ## 测试
 

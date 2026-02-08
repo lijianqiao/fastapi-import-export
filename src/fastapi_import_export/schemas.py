@@ -24,7 +24,6 @@ from pydantic import BaseModel, Field
 class ImportErrorItem(BaseModel):
     """Single validation error item.
 
-    校验错误项。
     校验错误明细项。
 
     Attributes:

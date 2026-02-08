@@ -203,6 +203,32 @@ export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
 export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ```
 
+## Unique Constraint Detection
+
+When committing imported data, the library automatically detects unique constraint
+violations from the database and returns a user-friendly error response. The
+`constraint_parser` module supports precise error parsing for five databases:
+
+| Database        | Error Pattern                                          | Extracted Info              |
+| --------------- | ------------------------------------------------------ | --------------------------- |
+| PostgreSQL      | `Key (col)=(val) already exists.`                      | columns, values, constraint |
+| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`             | values, constraint          |
+| SQLite          | `UNIQUE constraint failed: table.col`                  | columns                     |
+| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`             | values, constraint          |
+| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated`  | constraint                  |
+
+You can also use the parser directly in your own code:
+
+```python
+from fastapi_import_export import ConstraintDetail, parse_unique_constraint_error
+
+detail: ConstraintDetail | None = parse_unique_constraint_error(
+    str(exc), detail_text=getattr(getattr(exc, "orig", None), "detail", "")
+)
+if detail:
+    print(detail.db_type, detail.columns, detail.values)
+```
+
 ## End-to-End Example
 
 Below is a minimal end-to-end flow that supports upload, validate, preview, and commit.
@@ -298,14 +324,6 @@ pip install fastapi-import-export[polars,xlsx,storage]
 uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
-**Why is ImportExportService not exported from the package root?**
-
-Import it from the service module:
-
-```python
-from fastapi_import_export.service import ImportExportService
-```
-
 **Why are my rows filtered after validation?**
 
 The service removes rows that fail validation when generating `valid.parquet`.
@@ -317,11 +335,6 @@ Use preview with `kind=all` to inspect the original parsed data.
 - **checksum mismatch**: Ensure the client passes the checksum from `upload_parse_validate`.
 - **missing_dependency**: Install the correct extras for parse/storage/validation backends.
 - **db_conflict errors**: Check unique constraints and whether soft-deleted records exist.
-
-## Migration Notes
-
-- ImportExportService and ExportResult are not exported from the package root.
-  Import from fastapi_import_export.service if you still use them.
 
 ## Testing
 

@@ -203,6 +203,32 @@ export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
 export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ```
 
+## 一意制約の衝突検出
+
+インポートデータのコミット時、ライブラリはデータベースの一意制約違反を自動検出し、
+ユーザーフレンドリーなエラーレスポンスを返します。
+`constraint_parser` モジュールは 5 つのデータベースの正確なエラー解析をサポートします：
+
+| データベース    | エラーパターン                                          | 抽出情報                    |
+| --------------- | ------------------------------------------------------- | --------------------------- |
+| PostgreSQL      | `Key (col)=(val) already exists.`                       | 列名、値、制約名            |
+| MySQL / MariaDB | `Duplicate entry 'val' for key 'key_name'`              | 値、制約名                  |
+| SQLite          | `UNIQUE constraint failed: table.col`                   | 列名                        |
+| SQL Server      | `Violation of UNIQUE KEY constraint 'name'`              | 値、制約名                  |
+| Oracle          | `ORA-00001: unique constraint (SCHEMA.NAME) violated`   | 制約名                      |
+
+パーサーをビジネスコードで直接使用することもできます：
+
+```python
+from fastapi_import_export import ConstraintDetail, parse_unique_constraint_error
+
+detail: ConstraintDetail | None = parse_unique_constraint_error(
+    str(exc), detail_text=getattr(getattr(exc, "orig", None), "detail", "")
+)
+if detail:
+    print(detail.db_type, detail.columns, detail.values)
+```
+
 ## エンドツーエンド例
 
 アップロード、検証、プレビュー、コミットを含む最小構成の流れです。
@@ -298,14 +324,6 @@ pip install fastapi-import-export[polars,xlsx,storage]
 uv add fastapi-import-export[polars,xlsx,storage]
 ```
 
-**ImportExportService がパッケージ直下から取得できないのはなぜですか？**
-
-service モジュールからインポートしてください：
-
-```python
-from fastapi_import_export.service import ImportExportService
-```
-
 **検証後にデータがフィルタされるのはなぜですか？**
 
 サービスクラスは検証に失敗した行を `valid.parquet` から除外します。
@@ -317,11 +335,6 @@ from fastapi_import_export.service import ImportExportService
 - **checksum が一致しない**: `upload_parse_validate` が返した checksum をクライアントで使用してください。
 - **missing_dependency**: 解析/保存/検証の extras をインストールしてください。
 - **db_conflict**: 一意制約や論理削除レコードの影響を確認してください。
-
-## 移行メモ
-
-- ImportExportService と ExportResult はパッケージ直下からは公開されません。
-  既存コードでは fastapi_import_export.service からインポートしてください。
 
 ## テスト
 
