@@ -60,3 +60,35 @@ class TestResource:
         assert mapping["X"] == "a"
         assert mapping["Y"] == "b"
         assert mapping["Z"] == "c"
+
+    def test_export_mapping_inverts_field_aliases(self) -> None:
+        """export_mapping inverts field_aliases when reversible / export_mapping 姝ｇ‘鍙嶈浆 field_aliases銆?"""
+
+        class UserResource(Resource):
+            username: str
+            email: str
+            field_aliases = {"Username": "username", "Email": "email"}
+
+        mapping = UserResource.export_mapping()
+        assert mapping == {"username": "Username", "email": "Email"}
+
+    def test_export_mapping_conflict_fallbacks_to_identity(self) -> None:
+        """Conflict in field_aliases falls back to identity mapping / 冲突时回退为字段名映射"""
+
+        class BadResource(Resource):
+            username: str
+            field_aliases = {"User": "username", "U": "username"}
+
+        mapping = BadResource.export_mapping()
+        assert mapping["username"] == "username"
+
+    def test_export_mapping_export_aliases_override(self) -> None:
+        """export_aliases overrides field_aliases / export_aliases 优先级更高"""
+
+        class AliasResource(Resource):
+            username: str
+            export_aliases = {"username": "User Name"}
+            field_aliases = {"User": "username"}
+
+        mapping = AliasResource.export_mapping()
+        assert mapping == {"username": "User Name"}

@@ -173,6 +173,7 @@ full = [
     { name = "openpyxl" },
     { name = "polars" },
     { name = "uuid6" },
+    { name = "xlsxwriter" },
 ]
 polars = [
     { name = "polars" },
@@ -183,6 +184,7 @@ storage = [
 xlsx = [
     { name = "fastexcel" },
     { name = "openpyxl" },
+    { name = "xlsxwriter" },
 ]
 
 [package.dev-dependencies]
@@ -213,6 +215,8 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "uuid6", marker = "extra == 'full'", specifier = ">=2025.0.1" },
     { name = "uuid6", marker = "extra == 'storage'", specifier = ">=2025.0.1" },
+    { name = "xlsxwriter", marker = "extra == 'full'", specifier = ">=3.2.9" },
+    { name = "xlsxwriter", marker = "extra == 'xlsx'", specifier = ">=3.2.9" },
 ]
 provides-extras = ["polars", "xlsx", "storage", "full"]
 
@@ -697,4 +701,13 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ca/b7/4c0f736ca824b3a25b15e8213d1bcfc15f8ac2ae48d1b445b310892dc4da/uuid6-2025.0.1.tar.gz", hash = "sha256:cd0af94fa428675a44e32c5319ec5a3485225ba2179eefcf4c3f205ae30a81bd", size = 13932, upload-time = "2025-07-04T18:30:35.186Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/b2/93faaab7962e2aa8d6e174afb6f76be2ca0ce89fde14d3af835acebcaa59/uuid6-2025.0.1-py3-none-any.whl", hash = "sha256:80530ce4d02a93cdf82e7122ca0da3ebbbc269790ec1cb902481fa3e9cc9ff99", size = 6979, upload-time = "2025-07-04T18:30:34.001Z" },
+]
+
+[[package]]
+name = "xlsxwriter"
+version = "3.2.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/2c/c06ef49dc36e7954e55b802a8b231770d286a9758b3d936bd1e04ce5ba88/xlsxwriter-3.2.9.tar.gz", hash = "sha256:254b1c37a368c444eac6e2f867405cc9e461b0ed97a3233b2ac1e574efb4140c", size = 215940, upload-time = "2025-09-16T00:16:21.63Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/0c/3662f4a66880196a590b202f0db82d919dd2f89e99a27fadef91c4a33d41/xlsxwriter-3.2.9-py3-none-any.whl", hash = "sha256:9a5db42bc5dff014806c58a20b9eae7322a134abb6fce3c92c181bfb275ec5b3", size = 175315, upload-time = "2025-09-16T00:16:20.108Z" },
 ]

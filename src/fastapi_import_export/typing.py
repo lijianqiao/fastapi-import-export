@@ -8,6 +8,7 @@
 """
 
 from collections.abc import AsyncIterable
+from pathlib import Path
 from typing import Any, ParamSpec, Protocol, TypeVar
 
 from fastapi import UploadFile
@@ -141,9 +142,9 @@ class BuildTemplateFn(Protocol):
     Template builder protocol.
     模板构建协议。
 
-    Returns:
-        bytes: Template file bytes.
-        bytes: 模板文件字节数据。
+    Args:
+        path: Output file path.
+        path: 模板文件路径。
     """
 
-    async def __call__(self, *, resource: type[Resource]) -> bytes: ...
+    def __call__(self, path: Path) -> None: ...

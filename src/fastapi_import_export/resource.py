@@ -28,6 +28,7 @@ class Resource(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     field_aliases: ClassVar[dict[str, str]] = {}
+    export_aliases: ClassVar[dict[str, str]] = {}
 
     @classmethod
     def field_mapping(cls) -> dict[str, str]:
@@ -40,3 +41,27 @@ class Resource(BaseModel):
             dict[str, str]: 输入表头到资源字段的映射。
         """
         return dict(cls.field_aliases)
+
+    @classmethod
+    def export_mapping(cls) -> dict[str, str]:
+        """
+        Return export column mapping (field -> output header).
+        返回导出字段映射（字段 -> 输出列名）。
+        """
+        if cls.export_aliases:
+            return dict(cls.export_aliases)
+        inverse: dict[str, str] = {}
+        for header, field in cls.field_aliases.items():
+            field_key = str(field).strip()
+            if not field_key:
+                continue
+            if field_key in inverse and inverse[field_key] != header:
+                return cls._identity_mapping()
+            inverse[field_key] = header
+        if inverse:
+            return inverse
+        return cls._identity_mapping()
+
+    @classmethod
+    def _identity_mapping(cls) -> dict[str, str]:
+        return {name: name for name in cls.model_fields.keys()}

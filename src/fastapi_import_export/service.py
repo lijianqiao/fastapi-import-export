@@ -138,7 +138,7 @@ class ImportExportService:
     Examples:
         Basic usage / 基本用法:
 
-        >>> from fastapi_import_export import ImportExportService
+        >>> from fastapi_import_export.advanced import ImportExportService
         >>> svc = ImportExportService(db=object())
 
         With custom base_dir / 指定 base_dir:
@@ -343,12 +343,10 @@ class ImportExportService:
             filename = file.filename or "upload"
             content_type = file.content_type
             ext = Path(filename).suffix.lower()
-            allowed_exts = {
-                v.strip().lower() for v in (allowed_extensions or self.config.allowed_extensions) if str(v).strip()
-            }
-            allowed_mimes = {
-                v.strip().lower() for v in (allowed_mime_types or self.config.allowed_mime_types) if str(v).strip()
-            }
+            ext_source = self.config.allowed_extensions if allowed_extensions is None else allowed_extensions
+            mime_source = self.config.allowed_mime_types if allowed_mime_types is None else allowed_mime_types
+            allowed_exts = {v.strip().lower() for v in ext_source if str(v).strip()}
+            allowed_mimes = {v.strip().lower() for v in mime_source if str(v).strip()}
             if allowed_exts and ext not in allowed_exts:
                 raise ImportExportError(
                     message=f"Unsupported file extension: {ext} / 不支持的文件扩展名: {ext}",
@@ -403,8 +401,9 @@ class ImportExportService:
                     if "row_number" in valid_df.columns:
                         valid_df = valid_df.filter(~pl.col("row_number").is_in(list(extra_error_rows)))
             paths.errors_json.write_text(json.dumps(errors, ensure_ascii=False, indent=2), encoding="utf-8")
-            if not valid_df.is_empty():
-                valid_df.write_parquet(paths.valid_parquet)
+            # Always write valid.parquet, even when empty, to keep commit semantics consistent.
+            # 始终写入 valid.parquet，即使为空，保证提交语义一致。
+            valid_df.write_parquet(paths.valid_parquet)
 
             resp = ImportValidateResponse(
                 import_id=import_id,

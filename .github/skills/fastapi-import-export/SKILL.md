@@ -8,21 +8,21 @@ description: FastAPI-first import/export toolkit with composable workflows and o
 ## Description
 
 This skill helps you build import and export workflows for FastAPI. It provides
-composable lifecycle hooks, optional backend facades, and streaming exports for
-large datasets.
+an easy-layer API for 5-minute success, an explicit configuration layer for
+common business needs, and an advanced hook-based layer for power users.
 
 ## Use Cases
 
-- Upload files and run parse/validate/preview/commit.
-- Export data to CSV/XLSX with streaming responses.
-- Enable parsing/storage/validation backends only when needed.
+- One-call CSV/XLSX import and export (easy layer).
+- Explicit options for common business needs (options layer).
+- Full hook-based lifecycle when you need custom pipelines (advanced layer).
 
 ## Core Concepts
 
 - Resource: Field mapping and resource schema.
-- Importer: Parse/validate/transform/persist lifecycle.
-- Exporter: Query/serialize/render lifecycle.
-- ImportExportService: End-to-end upload/preview/commit workflow.
+- Easy API: `export_*` / `import_*` top-level functions.
+- Options: `ExportOptions` / `ImportOptions` (explicit configuration).
+- Advanced API: Importer/Exporter/ImportExportService under `fastapi_import_export.advanced`.
 - Facades: parse/storage/validation/db_validation optional backends.
 
 ## Capabilities
@@ -31,14 +31,41 @@ large datasets.
 - Explicit field mapping to avoid ORM coupling.
 - Optional dependencies with clear missing-dependency errors.
 - Streaming export payloads.
+- Defaults that reduce boilerplate (media_type, line endings, mapping).
 
 ## API Inventory
+
+**Easy Layer (Top-level)**
+
+- `export_csv(source, *, resource=None, params=None, options=None) -> ExportPayload`
+- `export_xlsx(source, *, resource=None, params=None, options=None) -> ExportPayload`
+- `import_csv(file, *, resource, validate_fn, persist_fn, options=None) -> ImportResult`
+- `import_xlsx(file, *, resource, validate_fn, persist_fn, options=None) -> ImportResult`
+
+**Options Layer**
+
+- `ExportOptions`
+	- `filename: str | None`
+	- `media_type: str | None`
+	- `include_bom: bool` (default: False)
+	- `line_ending: str` (default: "\\r\\n")
+	- `chunk_size: int` (default: 64 * 1024)
+	- `columns: list[str] | None`
+- `ImportOptions`
+	- `db: Any | None`
+	- `allow_overwrite: bool` (default: False)
+	- `unique_fields: list[str] | None`
+	- `db_checks: list[DbCheckSpec] | None`
+	- `allowed_extensions: Iterable[str] | None`
+	- `allowed_mime_types: Iterable[str] | None`
 
 **Core Types**
 
 - `Resource`
 	- `field_aliases: dict[str, str]`
 	- `field_mapping() -> dict[str, str]`
+	- `export_aliases: dict[str, str]`
+	- `export_mapping() -> dict[str, str]`
 - `Importer`
 	- `import_data(*, file, resource, allow_overwrite=False) -> ImportResult`
 	- `parse(*, file, resource) -> TTable`
@@ -76,6 +103,21 @@ large datasets.
 - `import_export_error`: Default fallback code for generic errors.
 
 ## API Behavior Details
+
+**Easy Export**
+
+- `source` can be `Iterable[Mapping]`, `polars.DataFrame`, or `query_fn`.
+- If `source` is callable, it is treated as `query_fn`.
+- Column order: `options.columns` > `Resource` field order > inferred from rows.
+- Column names: `Resource.export_mapping()` is applied.
+- Defaults: `media_type` derived from format; CSV uses `\\r\\n` and no BOM.
+
+**Easy Import**
+
+- `import_csv/import_xlsx` runs upload -> parse -> validate -> commit.
+- Requires `validate_fn` and `persist_fn` only.
+- On validation errors returns `ImportResult(status=VALIDATED, errors=...)`.
+- On success returns `ImportResult(status=COMMITTED, imported_rows=...)`.
 
 **Importer.import_data**
 
@@ -150,14 +192,51 @@ large datasets.
 
 - Upload allowlist via `resolve_config(allowed_extensions, allowed_mime_types)` or per-call override.
 - Optional dependencies via extras: `[polars,xlsx,storage]` or `[full]`.
-- Excel export with Polars may require `xlsxwriter`.
+- Excel export uses `openpyxl` in easy layer.
 
 ## Example Snippets
+
+**0) Easy Export (Top-level)**
+
+```python
+from fastapi import StreamingResponse
+from fastapi_import_export import export_csv, Resource
+
+
+class UserResource(Resource):
+    id: int | None
+    username: str
+
+
+async def query_fn(*, resource, params=None):
+    return [{"id": 1, "username": "alice"}]
+
+
+payload = await export_csv(query_fn, resource=UserResource)
+return StreamingResponse(payload.stream, media_type=payload.media_type)
+```
+
+**0.1) Easy Import (Top-level)**
+
+```python
+from fastapi_import_export import import_csv
+
+
+async def validate_fn(db, df, *, allow_overwrite: bool = False):
+    return df, []
+
+
+async def persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
+    return int(valid_df.height)
+
+
+result = await import_csv(file, resource=UserResource, validate_fn=validate_fn, persist_fn=persist_fn)
+```
 
 **1) Define Resource and Importer**
 
 ```python
-from fastapi_import_export import Importer, Resource
+from fastapi_import_export.advanced import Importer, Resource
 
 
 class UserResource(Resource):
@@ -195,7 +274,7 @@ import csv
 import io
 from collections.abc import AsyncIterator
 
-from fastapi_import_export import Exporter, Resource
+from fastapi_import_export.advanced import Exporter, Resource
 
 
 class UserResource(Resource):
@@ -237,7 +316,7 @@ payload = await exporter.stream(
 **3) Service workflow**
 
 ```python
-from fastapi_import_export.service import ImportExportService
+from fastapi_import_export.advanced import ImportExportService
 
 
 svc = ImportExportService(db=object())
@@ -258,6 +337,45 @@ from fastapi_import_export.config import resolve_config
 cfg = resolve_config(allowed_extensions=[".csv"], allowed_mime_types=["text/csv"])
 svc = ImportExportService(db=object(), config=cfg)
 ```
+
+## Advanced Extension Points
+
+- `fastapi_import_export.advanced.Importer` for custom parse/validate/transform/persist.
+- `fastapi_import_export.advanced.Exporter` for custom query/serialize/render.
+- `fastapi_import_export.advanced.ImportExportService` for upload/preview/commit workflows.
+- Facades: `parse`, `validation`, `db_validation`, `storage` to plug optional backends.
+
+### Custom Serializer/Renderer
+
+- **Serializer**: implement a function that turns table-like data into bytes.
+  - Input: list[dict] or DataFrame (your choice)
+  - Output: `bytes`
+  - Use with `advanced.Exporter.serialize` or your own wrapper in the easy layer.
+- **Renderer**: implement a function that turns bytes into `AsyncIterator[bytes]`.
+  - Useful for chunking large payloads.
+
+### Lifecycle Extension Rules
+
+- Import lifecycle (advanced): `parse -> validate -> transform -> persist`
+  - `validate` returns `(valid_data, errors)`. If `errors` is non-empty, skip transform/persist.
+  - `allow_overwrite` is passed through to validation and persistence.
+- Export lifecycle (advanced): `query -> serialize -> render`
+  - `query` returns table-like data.
+  - `serialize` returns bytes.
+  - `render` returns an async byte stream.
+
+### Optional Backends (Facades)
+
+- `parse` and `validation` default to Polars backends when installed.
+- `storage` defaults to filesystem storage when installed.
+- Missing backend raises `ImportExportError(error_code="missing_dependency")`.
+
+## Default Behaviors (Easy Layer)
+
+- CSV default: no BOM, `\\r\\n` line endings.
+- Media type: inferred from format.
+- Column order: `options.columns` > `Resource` field order > inferred.
+- Export mapping: `export_aliases` > invertible `field_aliases` > identity.
 
 ## Constraints
 

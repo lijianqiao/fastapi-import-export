@@ -88,7 +88,74 @@ uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmod
 - storage: Filesystem storage backend helpers.
 - full: All optional dependencies.
 
-## Quick Start
+## Quick Start (Easy)
+
+### 1) Define a Resource
+
+```python
+from fastapi_import_export import Resource
+
+
+class UserResource(Resource):
+    id: int | None
+    username: str
+    email: str
+
+    field_aliases = {
+        "Username": "username",
+        "Email": "email",
+    }
+```
+
+### 2) Import CSV/XLSX in One Call
+
+```python
+from fastapi import APIRouter, UploadFile
+from fastapi_import_export import import_csv
+
+router = APIRouter()
+
+
+async def validate_fn(db, df, *, allow_overwrite: bool = False):
+    return df, []
+
+
+async def persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
+    return int(valid_df.height)
+
+
+@router.post("/import")
+async def import_data(file: UploadFile):
+    return await import_csv(
+        file,
+        resource=UserResource,
+        validate_fn=validate_fn,
+        persist_fn=persist_fn,
+    )
+```
+
+### 3) Export CSV/XLSX
+
+```python
+from fastapi import StreamingResponse
+from fastapi_import_export import export_csv
+
+
+async def query_fn(*, resource, params=None):
+    return [
+        {"id": 1, "username": "alice"},
+        {"id": 2, "username": "bob"},
+    ]
+
+
+payload = await export_csv(query_fn, resource=UserResource)
+return StreamingResponse(payload.stream, media_type=payload.media_type)
+```
+
+## Advanced (Hooks)
+
+Advanced APIs live under `fastapi_import_export.advanced` and expose the full
+hook-based lifecycle.
 
 ### 1) Define a Resource
 
@@ -110,7 +177,7 @@ class UserResource(Resource):
 ### 2) Build an Importer
 
 ```python
-from fastapi_import_export import Importer
+from fastapi_import_export.advanced import Importer
 
 
 importer = Importer(
@@ -173,7 +240,7 @@ import csv
 import io
 from collections.abc import AsyncIterator
 
-from fastapi_import_export import Exporter, Resource
+from fastapi_import_export.advanced import Exporter, Resource
 
 
 class UserResource(Resource):
@@ -270,7 +337,7 @@ violations from the database and returns a user-friendly error response. The
 You can also use the parser directly in your own code:
 
 ```python
-from fastapi_import_export import ConstraintDetail, parse_unique_constraint_error
+from fastapi_import_export.advanced import ConstraintDetail, parse_unique_constraint_error
 
 detail: ConstraintDetail | None = parse_unique_constraint_error(
     str(exc), detail_text=getattr(getattr(exc, "orig", None), "detail", "")
@@ -288,9 +355,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, UploadFile
 
-from fastapi_import_export import Importer, Resource
+from fastapi_import_export.advanced import Importer, Resource
 from fastapi_import_export.schemas import ImportCommitRequest
-from fastapi_import_export.service import ImportExportService
+from fastapi_import_export.advanced import ImportExportService
 
 
 class UserResource(Resource):

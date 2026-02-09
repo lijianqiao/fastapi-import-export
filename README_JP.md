@@ -88,7 +88,73 @@ uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmod
 - storage: ファイルシステム保存バックエンド。
 - full: すべてのオプション依存。
 
-## クイックスタート
+## クイックスタート（易用層）
+
+### 1) Resource を定義
+
+```python
+from fastapi_import_export import Resource
+
+
+class UserResource(Resource):
+    id: int | None
+    username: str
+    email: str
+
+    field_aliases = {
+        "Username": "username",
+        "Email": "email",
+    }
+```
+
+### 2) CSV/XLSX を一発インポート
+
+```python
+from fastapi import APIRouter, UploadFile
+from fastapi_import_export import import_csv
+
+router = APIRouter()
+
+
+async def validate_fn(db, df, *, allow_overwrite: bool = False):
+    return df, []
+
+
+async def persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
+    return int(valid_df.height)
+
+
+@router.post("/import")
+async def import_data(file: UploadFile):
+    return await import_csv(
+        file,
+        resource=UserResource,
+        validate_fn=validate_fn,
+        persist_fn=persist_fn,
+    )
+```
+
+### 3) CSV/XLSX をエクスポート
+
+```python
+from fastapi import StreamingResponse
+from fastapi_import_export import export_csv
+
+
+async def query_fn(*, resource, params=None):
+    return [
+        {"id": 1, "username": "alice"},
+        {"id": 2, "username": "bob"},
+    ]
+
+
+payload = await export_csv(query_fn, resource=UserResource)
+return StreamingResponse(payload.stream, media_type=payload.media_type)
+```
+
+## 高度（Hooks）
+
+高度な API は `fastapi_import_export.advanced` にあります。
 
 ### 1) Resource を定義
 
@@ -110,7 +176,7 @@ class UserResource(Resource):
 ### 2) Importer を組み立て
 
 ```python
-from fastapi_import_export import Importer
+from fastapi_import_export.advanced import Importer
 
 
 importer = Importer(
@@ -173,7 +239,7 @@ import csv
 import io
 from collections.abc import AsyncIterator
 
-from fastapi_import_export import Exporter, Resource
+from fastapi_import_export.advanced import Exporter, Resource
 
 
 class UserResource(Resource):
@@ -270,7 +336,7 @@ export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats
 パーサーをビジネスコードで直接使用することもできます：
 
 ```python
-from fastapi_import_export import ConstraintDetail, parse_unique_constraint_error
+from fastapi_import_export.advanced import ConstraintDetail, parse_unique_constraint_error
 
 detail: ConstraintDetail | None = parse_unique_constraint_error(
     str(exc), detail_text=getattr(getattr(exc, "orig", None), "detail", "")
@@ -288,9 +354,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, UploadFile
 
-from fastapi_import_export import Importer, Resource
+from fastapi_import_export.advanced import Importer, Resource
 from fastapi_import_export.schemas import ImportCommitRequest
-from fastapi_import_export.service import ImportExportService
+from fastapi_import_export.advanced import ImportExportService
 
 
 class UserResource(Resource):
