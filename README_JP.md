@@ -84,7 +84,7 @@ uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmod
 ## オプション依存の説明
 
 - polars: DataFrame の解析/検証バックエンド。
-- xlsx: Excel 解析サポート（openpyxl + fastexcel）。
+- xlsx: Excel 解析サポート（openpyxl + fastexcel + xlsxwriter）。
 - storage: ファイルシステム保存バックエンド。
 - full: すべてのオプション依存。
 
@@ -166,6 +166,8 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 
 ## Exporter 使用例
 
+Excel で CSV が文字化けする場合は、UTF-8 BOM を付与してください（`utf-8-sig`）。
+
 ```python
 import csv
 import io
@@ -191,7 +193,7 @@ async def serialize_fn(*, data: list[dict], fmt: str) -> bytes:
     writer = csv.DictWriter(buf, fieldnames=["id", "username"])
     writer.writeheader()
     writer.writerows(data)
-    return buf.getvalue().encode("utf-8")
+    return buf.getvalue().encode("utf-8-sig")
 
 
 async def render_fn(*, data: bytes, fmt: str) -> AsyncIterator[bytes]:

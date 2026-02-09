@@ -84,7 +84,7 @@ uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmod
 ## 可选依赖说明
 
 - polars: DataFrame 解析与校验后端。
-- xlsx: Excel 解析支持（openpyxl + fastexcel）。
+- xlsx: Excel 解析支持（openpyxl + fastexcel + xlsxwriter）。
 - storage: 文件系统存储后端。
 - full: 全量可选依赖。
 
@@ -166,6 +166,8 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 
 ## Exporter 使用示例
 
+如果 Excel 打开 CSV 乱码，建议输出 UTF-8 BOM（使用 `utf-8-sig`）。
+
 ```python
 import csv
 import io
@@ -191,7 +193,7 @@ async def serialize_fn(*, data: list[dict], fmt: str) -> bytes:
     writer = csv.DictWriter(buf, fieldnames=["id", "username"])
     writer.writeheader()
     writer.writerows(data)
-    return buf.getvalue().encode("utf-8")
+    return buf.getvalue().encode("utf-8-sig")
 
 
 async def render_fn(*, data: bytes, fmt: str) -> AsyncIterator[bytes]:

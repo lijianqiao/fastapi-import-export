@@ -84,7 +84,7 @@ uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmod
 ## Extras
 
 - polars: DataFrame parsing and validation backends.
-- xlsx: Excel parsing support (openpyxl + fastexcel).
+- xlsx: Excel parsing support (openpyxl + fastexcel + xlsxwriter).
 - storage: Filesystem storage backend helpers.
 - full: All optional dependencies.
 
@@ -166,6 +166,8 @@ return StreamingResponse(payload.stream, media_type=payload.media_type)
 
 ## Exporter Usage Example
 
+If Excel shows garbled characters for CSV, emit UTF-8 BOM (use `utf-8-sig`).
+
 ```python
 import csv
 import io
@@ -191,7 +193,7 @@ async def serialize_fn(*, data: list[dict], fmt: str) -> bytes:
     writer = csv.DictWriter(buf, fieldnames=["id", "username"])
     writer.writeheader()
     writer.writerows(data)
-    return buf.getvalue().encode("utf-8")
+    return buf.getvalue().encode("utf-8-sig")
 
 
 async def render_fn(*, data: bytes, fmt: str) -> AsyncIterator[bytes]:

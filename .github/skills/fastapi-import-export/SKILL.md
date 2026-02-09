@@ -150,6 +150,7 @@ large datasets.
 
 - Upload allowlist via `resolve_config(allowed_extensions, allowed_mime_types)` or per-call override.
 - Optional dependencies via extras: `[polars,xlsx,storage]` or `[full]`.
+- Excel export with Polars may require `xlsxwriter`.
 
 ## Example Snippets
 
@@ -214,7 +215,7 @@ async def serialize_fn(*, data: list[dict], fmt: str) -> bytes:
 	writer = csv.DictWriter(buf, fieldnames=["id", "username"])
 	writer.writeheader()
 	writer.writerows(data)
-	return buf.getvalue().encode("utf-8")
+	return buf.getvalue().encode("utf-8-sig")
 
 
 async def render_fn(*, data: bytes, fmt: str) -> AsyncIterator[bytes]:
