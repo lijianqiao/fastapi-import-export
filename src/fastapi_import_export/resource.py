@@ -54,6 +54,10 @@ class Resource(BaseModel):
         """
         Return the field order for import/export.
         返回导入导出的字段顺序。
+
+        Returns:
+            list[str]: List of field names in order.
+            list[str]: 按顺序的字段名列表。
         """
         declared = list(cls.model_fields.keys())
         if declared:
@@ -65,6 +69,10 @@ class Resource(BaseModel):
         """
         Return export column mapping (field -> output header).
         返回导出字段映射（字段 -> 输出列名）。
+
+        Returns:
+            dict[str, str]: Mapping from resource field to output header.
+            dict[str, str]: 资源字段到输出表头的映射。
         """
         if cls.export_aliases:
             return dict(cls.export_aliases)
@@ -82,10 +90,25 @@ class Resource(BaseModel):
 
     @classmethod
     def _identity_mapping(cls) -> dict[str, str]:
+        """
+        Return an identity mapping of field names.
+        返回字段名的同一映射。
+
+        Returns:
+            dict[str, str]: Mapping where each field maps to itself.
+            dict[str, str]: 每个字段映射到自身的映射。
+        """
         return {name: name for name in cls.field_order()}
 
     @classmethod
     def _infer_model_fields(cls) -> list[str]:
+        """Infer field names from the associated model if possible.
+        如果可能，从关联模型推断字段名称。
+
+        Returns:
+            list[str]: Inferred field names from the model.
+            list[str]: 从模型推断的字段名称。
+        """
         model = cls.model
         if model is None:
             return []
@@ -125,12 +148,30 @@ class Resource(BaseModel):
 
     @classmethod
     def _excluded_set(cls) -> set[str]:
+        """Return a set of field names to exclude based on defaults and class configuration.
+        根据默认值和类配置返回要排除的字段名称集合。
+
+        Returns:
+            set[str]: Set of field names to exclude.
+            set[str]: 要排除的字段名称集合。
+        """
         defaults = {"id", "created_at", "updated_at", "deleted_at", "is_deleted", "deleted"}
         custom = {str(f).strip().lower() for f in cls.exclude_fields if str(f).strip()}
         return defaults | custom
 
     @classmethod
     def _is_excluded(cls, *, name: str, obj: Any, excluded: set[str]) -> bool:
+        """Determine if a field should be excluded based on name, object attributes, and exclusion set.
+        根据名称、对象属性和排除集合确定字段是否应被排除。
+
+        Args:
+            name (str): The name of the field.
+            obj (Any): The field object.
+            excluded (set[str]): Set of field names to exclude.
+
+        Returns:
+            bool: True if the field should be excluded, False otherwise.
+        """
         key = name.strip().lower()
         if key in excluded:
             return True

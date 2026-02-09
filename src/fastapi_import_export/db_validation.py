@@ -17,6 +17,14 @@ type KeyTuple = tuple[str, ...]
 
 
 class DbCheckFn(Protocol):
+    """Protocol for asynchronous database check functions.
+    异步数据库校验函数协议。
+
+    The callable should accept (db, keys, *, allow_overwrite=False) and return
+    a mapping from KeyTuple to conflict details.
+    调用签名为 (db, keys, *, allow_overwrite=False)，返回 KeyTuple 到冲突详情的映射。
+    """
+
     async def __call__(
         self,
         db: Any,
@@ -53,6 +61,17 @@ class DbCheckSpec:
 
 
 def _load_backend() -> Any:
+    """Load optional backend module for DB validation (polars).
+    加载数据库校验可选后端模块（polars）。
+
+    Returns:
+        The backend module providing DB validation helpers.
+            提供数据库校验辅助的后端模块。
+
+    Raises:
+        ImportExportError: When optional dependencies are missing.
+            当缺少可选依赖时抛出 ImportExportError。
+    """
     try:
         from fastapi_import_export import db_validation_polars
 
@@ -69,6 +88,15 @@ def build_key_to_row_numbers(df: Any, key_fields: Iterable[str]) -> dict[KeyTupl
     """
     Build mapping: key -> row_number list.
     构建映射：key -> 行号列表。
+
+    Args:
+        df: Input DataFrame.
+        df: 输入数据框。
+        key_fields: Key fields list.
+        key_fields: key 字段列表。
+    Returns:
+        Mapping from key tuple to list of row numbers (1-based).
+        key 元组到行号列表（基于 1）的映射。
     """
     backend = _load_backend()
     return backend.build_key_to_row_numbers(df, key_fields)
@@ -86,6 +114,20 @@ def build_db_conflict_errors(
     """
     Convert db conflict map to error list.
     将数据库冲突映射转换为错误列表。
+
+    Args:
+        key_to_row_numbers: Mapping from key tuple to list of row numbers (1-based).
+            key 元组到行号列表（基于 1）的映射。
+        conflicts: Mapping from key tuple to conflict details.
+            key 元组到冲突详情的映射。
+        field: Error field name.
+            错误字段名。
+        default_message: Default error message.
+            默认错误消息。
+        type: Error type.
+            错误类型。
+        max_rows_per_key: Maximum number of rows to include per key in error list.
+            每个 key 在错误列表中包含的最大行数。
     """
     backend = _load_backend()
     return backend.build_db_conflict_errors(
@@ -108,6 +150,19 @@ async def run_db_checks(
     """
     Run database checks and return error list.
     执行数据库校验并返回错误列表。
+
+    Args:
+        db: Database connection or context.
+            数据库连接或上下文。
+        df: Input DataFrame.
+            输入数据框。
+        specs: List of DbCheckSpec defining checks to run.
+            定义要运行的校验的 DbCheckSpec 列表。
+        allow_overwrite: Whether to allow overwriting existing values (affects checks).
+            是否允许覆盖现有值（影响校验行为）。
+    Returns:
+        List of error dicts for any detected issues.
+            检测到的问题的错误字典列表。
     """
     backend = _load_backend()
     return await backend.run_db_checks(db=db, df=df, specs=specs, allow_overwrite=allow_overwrite)

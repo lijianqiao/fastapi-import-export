@@ -29,10 +29,30 @@ from fastapi_import_export.validation_core import ErrorCollector
 
 
 def _build_column_aliases(specs: list[FieldSpec]) -> dict[str, str]:
+    """Build column alias mapping for Tortoise import.
+    为 Tortoise 导入构建列别名映射。
+
+    Args:
+        specs: Field specification list.
+            字段规范列表。
+    Returns:
+        dict[str, str]: Column name -> alias mapping.
+            列名到别名的映射。
+    """
     return {spec.name: spec.name for spec in specs}
 
 
 def _required_fields(specs: list[FieldSpec]) -> set[str]:
+    """Compute required field names for Tortoise import.
+    计算 Tortoise 导入的必填字段名称集合。
+
+    Args:
+        specs: Field specification list.
+            字段规范列表。
+    Returns:
+        set[str]: Required field names.
+            必填字段名称集合。
+    """
     required: set[str] = set()
     for spec in specs:
         if spec.nullable:
@@ -51,6 +71,24 @@ async def _check_db_unique(
     unique_fields: list[str],
     rows: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Check for existing records in the DB that conflict with unique fields (Tortoise).
+    检查数据库中是否存在与唯一字段冲突的记录（Tortoise 版本）。
+
+    Uses Tortoise query APIs to find existing values and returns (errors, filtered_rows).
+    使用 Tortoise 查询 API 查找已存在值，返回 (errors, filtered_rows)。
+
+    Args:
+        model: Tortoise model class.
+            Tortoise 模型类。
+        unique_fields: Fields to consider for uniqueness.
+            用于唯一性判断的字段列表。
+        rows: Candidate rows with `row_number` for error reporting.
+            带有 `row_number` 的候选行，用于错误定位。
+
+    Returns:
+        Tuple of (errors, filtered_rows).
+            (错误列表, 过滤后的行列表)。
+    """
     _require_tortoise()
     from tortoise.expressions import Q
 
@@ -112,6 +150,25 @@ def _build_validate_fn(
     specs: list[FieldSpec],
     unique_fields: list[str] | None,
 ) -> Any:
+    """Build validation function for Tortoise model import.
+    构建用于 Tortoise 模型导入的校验函数。
+
+    Returns a callable `async def validate_fn(db, df, *, allow_overwrite=False)`
+    that returns (valid_df, errors).
+    返回可调用的 `async def validate_fn(db, df, *, allow_overwrite=False)`，其返回 (valid_df, errors)。
+
+    Args:
+        model: Tortoise model class.
+            Tortoise 模型类。
+        specs: Field specifications.
+            字段规范列表。
+        unique_fields: Optional unique fields to check against DB.
+            可选：用于数据库校验的唯一字段列表。
+
+    Returns:
+        Callable: The async validation function.
+            异步校验函数。
+    """
     codecs = resolve_field_codecs(model, specs)
     required = _required_fields(specs)
 
@@ -179,6 +236,22 @@ def _build_validate_fn(
 
 
 def _build_persist_fn(*, model: Any) -> Any:
+    """Build a persistence function that bulk-creates model instances (Tortoise).
+    构建用于批量创建模型实例的持久化函数（Tortoise）。
+
+    The returned `persist_fn` accepts (db, valid_df, *, allow_overwrite=False)
+    and uses Tortoise `bulk_create` to persist rows.
+    返回的 `persist_fn` 接受 (db, valid_df, *, allow_overwrite=False)，并使用 Tortoise 的 `bulk_create` 持久化行。
+
+    Args:
+        model: Tortoise model class.
+            Tortoise 模型类。
+
+    Returns:
+        Callable: Async persistence function returning number of created rows.
+            异步持久化函数，返回创建的行数。
+    """
+
     async def persist_fn(db: Any, valid_df: Any, *, allow_overwrite: bool = False) -> int:
         rows = valid_df.to_dicts() if not valid_df.is_empty() else []
         for row in rows:
@@ -201,8 +274,30 @@ async def import_model_csv(
     options: ImportOptions | None = None,
     persist_fn: Any | None = None,
 ) -> ImportResult[ImportErrorItem]:
-    """Import CSV into a Tortoise ORM model.
-    使用 Tortoise ORM 导入 CSV。
+    """Import a CSV file into a Tortoise ORM model.
+    使用 Tortoise ORM 将 CSV 文件导入模型。
+
+    Args:
+        file: Uploaded CSV file (`fastapi.UploadFile`).
+            上传的 CSV 文件（`fastapi.UploadFile`）。
+        model: Tortoise model class to import into.
+            要导入的 Tortoise 模型类。
+        unique_fields: Optional list of unique fields to check against DB.
+            可选：需在数据库中校验唯一性的字段列表。
+        columns: Optional list of columns to import.
+            可选：要导入的列名列表。
+        options: Optional import options.
+            可选的导入配置选项。
+        persist_fn: Optional custom persistence function; defaults to Tortoise bulk create.
+            可选：自定义持久化函数；默认使用 Tortoise 的批量创建。
+
+    Returns:
+        ImportResult: Result object with status, imported_rows and errors.
+            返回 ImportResult，包含状态、导入行数与错误列表（如有）。
+
+    Raises:
+        ImportExportError: If required setup is missing or operation fails.
+            当缺少必要配置或操作失败时抛出 ImportExportError。
     """
     opts = options or ImportOptions()
     effective_unique_fields = unique_fields if unique_fields is not None else opts.unique_fields

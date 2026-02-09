@@ -431,6 +431,29 @@ def _to_rows(data: Any, *, resource: type[Resource] | None) -> list[dict[str, An
 
 
 def _coerce_row(item: Any, *, resource: type[Resource] | None) -> dict[str, Any]:
+    """Coerce a single item into a mapping (row dict) for export.
+
+    将单个项目强制转换为导出所用的映射（字典行）。
+
+    If `item` is already a mapping, it is converted to a plain dict. If a
+    `resource` is provided, attributes are read in the resource field order.
+
+    如果 `item` 已经是映射，则转换为普通字典；如果提供了 `resource`，则按照 `resource.field_order()` 读取属性。
+
+    Args:
+        item: The input row item (mapping or object).
+            输入行项（映射或对象）。
+        resource: Optional Resource class for attribute-to-field mapping.
+            可选：用于属性到字段映射的 Resource 类。
+
+    Returns:
+        dict: The coerced row dictionary.
+            强制转换后的字典行。
+
+    Raises:
+        TypeError: If the input cannot be coerced to a mapping.
+            当输入无法转换为映射时抛出 TypeError。
+    """
     if isinstance(item, Mapping):
         return dict(item)
     if resource is not None:
@@ -442,6 +465,23 @@ def _coerce_row(item: Any, *, resource: type[Resource] | None) -> dict[str, Any]
 
 
 def _decode_df_with_codecs(df: Any, codecs: dict[str, Codec]) -> tuple[Any, list[dict[str, Any]]]:
+    """Decode DataFrame text fields using provided codecs.
+    使用提供的编解码器解码 DataFrame 中的文本字段。
+
+    Returns a tuple of (decoded_df, errors). Errors are a list of dicts
+    describing row/field parse failures.
+    返回 (decoded_df, errors)。errors 为描述行/字段解析失败的错误字典列表。
+
+    Args:
+        df: Polars DataFrame containing data rows (including `row_number`).
+            包含数据行（包括 `row_number`）的 Polars DataFrame。
+        codecs: Mapping field_name -> Codec used for parsing values.
+            字段名称到 Codec 的映射，用于解析值。
+
+    Returns:
+        Tuple[pl.DataFrame, list]: Decoded DataFrame and error list.
+            解码后的 DataFrame 与错误列表。
+    """
     import polars as pl
 
     rows = df.to_dicts() if not df.is_empty() else []
@@ -477,6 +517,19 @@ def _decode_df_with_codecs(df: Any, codecs: dict[str, Codec]) -> tuple[Any, list
 
 
 def _encode_df_with_codecs(df: Any, codecs: dict[str, Codec]) -> Any:
+    """Encode DataFrame fields to text using provided codecs.
+    使用提供的编解码器将 DataFrame 字段格式化为文本。
+
+    Args:
+        df: Polars DataFrame containing typed values.
+            包含类型化值的 Polars DataFrame。
+        codecs: Mapping field_name -> Codec used for formatting values.
+            字段名称到 Codec 的映射，用于格式化值。
+
+    Returns:
+        pl.DataFrame: DataFrame with formatted string values.
+            包含格式化字符串值的 DataFrame。
+    """
     import polars as pl
 
     rows = df.to_dicts() if not df.is_empty() else []
@@ -492,6 +545,21 @@ def _encode_df_with_codecs(df: Any, codecs: dict[str, Codec]) -> Any:
 
 
 def _is_polars_df(value: Any) -> bool:
+    """Return True if a value is a Polars DataFrame.
+    如果值是 Polars DataFrame 则返回 True。
+
+    This helper avoids importing polars at module import time by importing
+    lazily on demand.
+    该助手通过按需延迟导入 polars 来避免在模块导入时立即导入该库。
+
+    Args:
+        value: Any value to test.
+            要检测的任意值。
+
+    Returns:
+        bool: True when the value is a Polars DataFrame, otherwise False.
+            值为 Polars DataFrame 时为 True，否则为 False。
+    """
     try:
         import polars as pl  # type: ignore
     except Exception:

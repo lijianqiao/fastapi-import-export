@@ -28,6 +28,20 @@ async def export_model_csv(
 ) -> ExportPayload:
     """Export ORM model rows to CSV using Tortoise ORM.
     使用 Tortoise ORM 导出 CSV。
+
+    Args:
+        model: Tortoise model class.
+            Tortoise 模型类。
+        filters: Optional filter mapping or callable, applied to a queryset.
+            可选：用于过滤的映射或可调用，会应用到 queryset 上。
+        columns: Optional list of columns to include.
+            可选：要包含的列名列表。
+        options: Optional `ExportOptions` to override defaults.
+            可选的 `ExportOptions`，用于覆盖默认导出设置。
+
+    Returns:
+        ExportPayload: Export result with filename, media type and byte stream.
+            导出结果，包含文件名、媒体类型与字节流。
     """
     columns_final = columns if columns is not None else (options.columns if options else None)
     specs = resolve_export_specs(get_field_specs(model), columns_final)

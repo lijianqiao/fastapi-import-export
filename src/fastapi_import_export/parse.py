@@ -14,6 +14,12 @@ from fastapi_import_export.exceptions import ImportExportError
 
 
 def _load_backend() -> Any:
+    """Load optional parsing backend (polars/openpyxl) and return module.
+    加载可选的解析后端（polars/openpyxl）并返回模块。
+
+    Raises ImportExportError when optional dependencies are not installed.
+    当可选依赖未安装时抛出 ImportExportError。
+    """
     try:
         from fastapi_import_export import parse_polars
 

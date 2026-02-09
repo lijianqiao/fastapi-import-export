@@ -25,6 +25,21 @@ class Serializer(Protocol):
 
 
 def _infer_columns(rows: Iterable[Mapping[str, Any]]) -> list[str]:
+    """Infer the column order from iterable mapping rows.
+    从映射行的可迭代对象中推断列顺序。
+
+    Iterates rows in order and collects the first occurrence of each key to
+    preserve header ordering for CSV/XLSX output.
+    遍历行并收集每个键的首次出现位置，以便在 CSV/XLSX 输出中保持表头顺序。
+
+    Args:
+        rows: Iterable of mapping rows.
+            映射行的可迭代对象。
+
+    Returns:
+        list[str]: Inferred column name list.
+            推断的列名列表。
+    """
     columns: list[str] = []
     seen: set[str] = set()
     for row in rows:
@@ -41,6 +56,19 @@ class CsvSerializer:
     """
 
     def serialize(self, *, data: Iterable[Mapping[str, Any]], options: ExportOptions) -> bytes:
+        """Serialize data to CSV format.
+        将数据序列化为 CSV 格式。
+
+        Args:
+            data: Iterable of mapping rows.
+                映射行的可迭代对象。
+            options: Export options.
+                导出选项。
+
+        Returns:
+            bytes: Serialized CSV data.
+                序列化的 CSV 数据。
+        """
         rows = list(data)
         fieldnames = options.columns or _infer_columns(rows)
         buf = io.StringIO()
@@ -64,6 +92,19 @@ class XlsxSerializer:
     """
 
     def serialize(self, *, data: Iterable[Mapping[str, Any]], options: ExportOptions) -> bytes:
+        """Serialize data to XLSX format.
+        将数据序列化为 XLSX 格式。
+
+        Args:
+            data: Iterable of mapping rows.
+                映射行的可迭代对象。
+            options: Export options.
+                导出选项。
+
+        Returns:
+            bytes: Serialized XLSX data.
+                序列化的 XLSX 数据。
+        """
         rows = list(data)
         headers = options.columns or _infer_columns(rows)
         Workbook = _require_openpyxl()
@@ -81,6 +122,13 @@ class XlsxSerializer:
 
 
 def _require_openpyxl() -> Any:
+    """Ensure openpyxl is available and return the Workbook class.
+    确保 openpyxl 可用并返回 Workbook 类。
+
+    Raises:
+        ImportExportError: If openpyxl cannot be imported.
+            无法导入 openpyxl 时抛出 ImportExportError。
+    """
     try:
         from openpyxl import Workbook
 

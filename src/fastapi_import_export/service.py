@@ -79,6 +79,13 @@ from fastapi_import_export.validation import collect_infile_duplicates
 
 
 def _require_polars() -> Any:
+    """Ensure Polars is available and return the module.
+    确保 Polars 可用并返回模块。
+
+    Raises:
+        ImportExportError: When Polars cannot be imported.
+            无法导入 Polars 时抛出 ImportExportError。
+    """
     try:
         import polars as pl
 
@@ -92,6 +99,13 @@ def _require_polars() -> Any:
 
 
 def _require_openpyxl() -> Any:
+    """Ensure openpyxl is importable and return the Workbook class.
+    确保 openpyxl 可导入并返回 Workbook 类。
+
+    Raises:
+        ImportExportError: If openpyxl is not available.
+            openpyxl 不可用时抛出 ImportExportError。
+    """
     try:
         from openpyxl import Workbook
 
@@ -331,11 +345,8 @@ class ImportExportService:
         """
         import_id = new_import_id()
         paths = get_import_paths(import_id, config=self.config)
-        # Track whether parsing succeeded; only clean up the directory on
-        # parse-stage failures. Validation-stage errors preserve artifacts
-        # so the user can retry without re-uploading.
-        # 跟踪解析阶段是否成功；仅在解析阶段失败时清理目录。
-        # 校验阶段的错误保留中间产物，用户无需重新上传即可重试。
+        # Track whether parsing succeeded; only clean up the directory on parse-stage failures. / 跟踪解析是否成功；仅在解析阶段失败时清理目录。
+        # Validation-stage errors preserve artifacts so the user can retry without re-uploading. / 校验阶段的错误会保留中间产物，用户无需重新上传即可重试.
         parsed_ok = False
         try:
             paths.root.mkdir(parents=True, exist_ok=True)
@@ -401,7 +412,7 @@ class ImportExportService:
                     if "row_number" in valid_df.columns:
                         valid_df = valid_df.filter(~pl.col("row_number").is_in(list(extra_error_rows)))
             paths.errors_json.write_text(json.dumps(errors, ensure_ascii=False, indent=2), encoding="utf-8")
-            # Always write valid.parquet, even when empty, to keep commit semantics consistent.
+            # Always write valid.parquet, even when empty, to keep commit semantics consistent. / 无论是否为空，都要写入 valid.parquet，以保持提交语义一致。
             # 始终写入 valid.parquet，即使为空，保证提交语义一致。
             valid_df.write_parquet(paths.valid_parquet)
 
@@ -429,8 +440,8 @@ class ImportExportService:
             return resp
         except Exception:
             if not parsed_ok:
-                # Only clean up when parsing failed; preserve artifacts for
-                # validation-stage retries.
+                # Only clean up when parsing failed; preserve artifacts for / 仅在解析失败时清理；为校验阶段重试保留中间产物。
+                # validation-stage retries. / 校验阶段重试。
                 # 仅在解析阶段失败时清理；校验阶段失败保留中间产物以便重试。
                 safe_rmtree(paths.root)
             raise
@@ -592,7 +603,7 @@ class ImportExportService:
             )
 
         lock_key = f"{lock_namespace}:lock:{body.import_id}"
-        # Use a unique lock value so we only release our own lock.
+        # Use a unique lock value so we only release our own lock. / 使用唯一的锁值以确保只释放我们自己的锁。
         # 使用唯一锁值，确保仅释放自己持有的锁。
         lock_value = str(new_import_id())
         lock_acquired = False
@@ -607,7 +618,7 @@ class ImportExportService:
 
         pl = _require_polars()
         valid_df = pl.read_parquet(paths.valid_parquet)
-        # Ensure a clean transaction state before persisting.
+        # Ensure a clean transaction state before persisting. / 在持久化之前确保事务状态干净。
         # 在落库前确保事务状态干净，避免残留的未提交操作干扰提交。
         rollback = getattr(self.db, "rollback", None)
         if callable(rollback):
@@ -635,8 +646,8 @@ class ImportExportService:
             meta["commit_error"] = str(exc)
             write_meta(paths, meta)
 
-            # ORM-agnostic: use duck-typing to extract constraint details
-            # from any ORM (e.g. SQLAlchemy .orig, Tortoise, raw driver, etc.).
+            # ORM-agnostic: use duck-typing to extract constraint details / 与 ORM 无关：使用鸭子类型从任何 ORM 中提取约束详情
+            # from any ORM (e.g. SQLAlchemy .orig, Tortoise, raw driver, etc.). / 例如 SQLAlchemy .orig、Tortoise、原生驱动等。
             # ORM 无关：使用鸭子类型从任何 ORM 提取约束详情。
             text = str(exc)
             detail_text = ""
@@ -659,8 +670,8 @@ class ImportExportService:
         finally:
             if self.redis_client is not None and lock_acquired:
                 try:
-                    # Only delete if the lock value still matches ours.
-                    # Non-atomic GET+DELETE; acceptable for this library scope.
+                    # Only delete if the lock value still matches ours. / 仅在锁值仍与我们的一致时才删除。
+                    # Non-atomic GET+DELETE; acceptable for this library scope. / 非原子性的 GET+DELETE；在本库范围内可接受。
                     # 仅在锁值仍为自己持有时删除。非原子 GET+DELETE；在本库范围内可接受。
                     current = await _maybe_await(self.redis_client.get(lock_key))
                     if current is not None and str(current) == lock_value:

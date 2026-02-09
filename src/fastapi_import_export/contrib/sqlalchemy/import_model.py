@@ -31,10 +31,36 @@ from fastapi_import_export.validation_core import ErrorCollector
 
 
 def _build_column_aliases(specs: list[FieldSpec]) -> dict[str, str]:
+    """Build column alias mapping used for file column -> model field resolution.
+    构建列别名映射，用于文件列到模型字段的解析。
+
+    Args:
+        specs: List of FieldSpec describing importable fields.
+            描述可导入字段的 FieldSpec 列表。
+
+    Returns:
+        dict[str, str]: Mapping from column name to alias (identity mapping here).
+            列名到别名的映射（此处为恒等映射）。
+    """
     return {spec.name: spec.name for spec in specs}
 
 
 def _required_fields(specs: list[FieldSpec]) -> set[str]:
+    """Compute the set of required field names for import.
+    计算导入时必填字段的集合。
+
+    A field is required when it is not nullable, has no default, and is
+    not an auto-incrementing primary key.
+    当字段非空、无默认值且不是自增主键时，视为必填字段。
+
+    Args:
+        specs: Field specifications to evaluate.
+            用于评估的字段规范列表。
+
+    Returns:
+        set[str]: Set of required field names.
+            必填字段名称集合。
+    """
     required: set[str] = set()
     for spec in specs:
         if spec.nullable:
@@ -54,6 +80,30 @@ async def _check_db_unique(
     unique_fields: list[str],
     rows: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Check the database for existing rows that would conflict with unique fields.
+    校验数据库中是否存在与指定唯一字段冲突的记录。
+
+    This function maps incoming rows to key tuples, queries the DB and
+    returns an error list plus the rows filtered to exclude conflicting rows.
+    该函数将传入行映射为键元组，查询数据库并返回错误列表以及去除冲突行后的行列表。
+
+    Args:
+        db: Async DB session/connection.
+            异步数据库会话/连接。
+        model: SQLAlchemy model class used to query existing values.
+            用于查询现有值的 SQLAlchemy 模型类。
+        unique_fields: Fields to consider for uniqueness.
+            用于唯一性判断的字段列表。
+        rows: Candidate rows with a `row_number` for error reporting.
+            带有 `row_number` 的候选行，用于错误定位。
+
+    Returns:
+        Tuple of (errors, filtered_rows):
+            errors: list of error dicts describing conflicts.
+                描述冲突的错误字典列表。
+            filtered_rows: rows with conflicting entries removed.
+                去除冲突条目的行列表。
+    """
     sa = _require_sqlalchemy()
     fields = [f for f in unique_fields if f]
     if not fields:
@@ -118,6 +168,25 @@ def _build_validate_fn(
     specs: list[FieldSpec],
     unique_fields: list[str] | None,
 ) -> Any:
+    """Build and return an async validate function for imported data.
+    构建并返回用于导入数据的异步校验函数。
+
+    The returned function has signature: async def validate_fn(db, df, *, allow_overwrite=False)
+    which returns (valid_df, errors).
+    返回的函数签名为: async def validate_fn(db, df, *, allow_overwrite=False)，返回 (valid_df, errors)。
+
+    Args:
+        model: SQLAlchemy model.
+            SQLAlchemy 模型。
+        specs: Field specifications to validate/parse.
+            用于校验/解析的字段规范。
+        unique_fields: Optional per-import unique field list for DB checks.
+            可选：用于数据库校验的唯一字段列表。
+
+    Returns:
+        Callable: An async validation function.
+            异步校验函数。
+    """
     codecs = resolve_field_codecs(model, specs)
     required = _required_fields(specs)
 
@@ -190,6 +259,22 @@ def _build_validate_fn(
 
 
 def _build_persist_fn(*, model: Any) -> Any:
+    """Build and return a persistence function for SQLAlchemy insert operations.
+    构建并返回用于 SQLAlchemy 插入操作的持久化函数。
+
+    The returned `persist_fn` will accept (db, valid_df, *, allow_overwrite=False)
+    and perform bulk insert of validated rows.
+    返回的 `persist_fn` 接受 (db, valid_df, *, allow_overwrite=False) 并对校验通过的行进行批量插入。
+
+    Args:
+        model: SQLAlchemy model class to insert into.
+            要插入的 SQLAlchemy 模型类。
+
+    Returns:
+        Callable: An async persistence function that returns number of written rows.
+            异步持久化函数，返回写入的行数。
+    """
+
     async def persist_fn(db: Any, valid_df: Any, *, allow_overwrite: bool = False) -> int:
         rows = valid_df.to_dicts() if not valid_df.is_empty() else []
         for row in rows:
@@ -219,8 +304,38 @@ async def import_model_csv(
     options: ImportOptions | None = None,
     persist_fn: Any | None = None,
 ) -> ImportResult[ImportErrorItem]:
-    """Import CSV into an ORM model using SQLAlchemy async session.
-    使用 SQLAlchemy 异步会话导入 CSV。
+    """Import a CSV file into a SQLAlchemy ORM model.
+    使用 SQLAlchemy ORM 将 CSV 文件导入模型。
+
+    This helper wires together parsing, validation (including DB-uniqueness
+    checks) and persistence for SQLAlchemy models using the package's
+    import/export primitives.
+    该工具将解析、校验（包括数据库唯一性检查）和持久化组合在一起，供 SQLAlchemy 模型使用库的导入/导出原语。
+
+    Args:
+        file: Uploaded CSV file (`fastapi.UploadFile`).
+            上传的 CSV 文件（`fastapi.UploadFile`）。
+        model: SQLAlchemy model class to import into.
+            要导入的 SQLAlchemy 模型类。
+        db: Asynchronous DB session/connection to use for checks and persistence.
+            用于校验和持久化的异步数据库会话/连接。
+        unique_fields: Optional list of fields that must be unique in DB.
+            可选：需在数据库中唯一的字段列表。
+        columns: Optional list of column names to import; defaults to resolved import specs.
+            可选：要导入的列名列表；默认使用解析后的导入规范。
+        options: Optional import options.
+            可选的导入配置选项。
+        persist_fn: Optional custom persistence function; if omitted, the default
+            SQLAlchemy-based persist function will be used.
+            可选：自定义持久化函数；若省略，将使用默认基于 SQLAlchemy 的持久化函数。
+
+    Returns:
+        ImportResult: Result object with status, imported_rows and errors if any.
+            返回 ImportResult，包含状态、导入行数和（如有）错误列表。
+
+    Raises:
+        ImportExportError: When required parameters are missing or validation fails.
+            当缺少必需参数或校验失败时抛出 ImportExportError。
     """
     if db is None:
         raise ImportExportError(message="db is required / 必须提供 db")

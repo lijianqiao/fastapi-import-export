@@ -21,6 +21,23 @@ from fastapi_import_export.options import ExportOptions
 
 
 def _apply_filters(stmt: Any, *, model: Any, filters: Any) -> Any:
+    """
+    Apply filters to a SQLAlchemy select statement based on the provided filters.
+    根据提供的过滤器将过滤条件应用到 SQLAlchemy 的 select 语句上。
+
+    Args:
+        stmt: The initial SQLAlchemy select statement to apply filters to.
+            要应用过滤器的初始 SQLAlchemy select 语句。
+        model: The SQLAlchemy model class being queried, used to resolve column references.
+            被查询的 SQLAlchemy 模型类，用于解析列引用。
+        filters: Optional filters to apply. Can be a mapping of column->value,
+            or a callable that accepts the model and returns an expression.
+            可选的过滤器，可为列名到值的映射，或接收 model 并返回表达式的可调用对象。
+    Returns:
+        The SQLAlchemy statement with filters applied.
+        应用过滤器后的 SQLAlchemy 语句。
+
+    """
     if filters is None:
         return stmt
     if callable(filters):
@@ -51,8 +68,33 @@ async def export_model_csv(
     columns: list[str] | None = None,
     options: ExportOptions | None = None,
 ) -> ExportPayload:
-    """Export ORM model rows to CSV using SQLAlchemy async session.
+    """Export ORM model rows to CSV using a SQLAlchemy async session.
     使用 SQLAlchemy 异步会话导出 CSV。
+
+    Export rows from a SQLAlchemy model into CSV format using sensible codecs
+    inferred from the model and optional filtering/column selection.
+    从 SQLAlchemy 模型导出行到 CSV，自动根据模型推断字段编解码器，并支持可选的过滤与字段选择。
+
+    Args:
+        model: SQLAlchemy model class.
+            SQLAlchemy 模型类。
+        db: Asynchronous database session/connection used to execute queries.
+            异步数据库会话/连接，用于执行查询。
+        filters: Optional filters to apply. Can be a mapping of column->value,
+            or a callable that accepts the model and returns an expression.
+            可选的过滤器，可为列名到值的映射，或接收 model 并返回表达式的可调用对象。
+        columns: Optional list of columns to include; defaults to all exportable columns.
+            可选的要包含的列名列表；默认导出所有可导出的列。
+        options: Optional `ExportOptions` to override default export settings.
+            可选的 `ExportOptions`，用于覆盖默认导出设置。
+
+    Returns:
+        ExportPayload: Contains filename, media_type and an async byte stream.
+            包含文件名、媒体类型以及异步字节流的导出负载。
+
+    Raises:
+        ImportExportError: If SQLAlchemy is not available or the query fails.
+            当无法使用 SQLAlchemy 或查询失败时抛出。
     """
     sa = _require_sqlalchemy()
     columns_final = columns if columns is not None else (options.columns if options else None)

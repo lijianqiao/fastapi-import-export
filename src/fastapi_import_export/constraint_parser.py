@@ -46,9 +46,9 @@ class ConstraintDetail:
     db_type: str = "unknown"
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- / 分隔线
 # Database-specific parsers / 数据库特定解析器
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- / 分隔线
 
 _ConstraintParser = Callable[[str, str], ConstraintDetail | None]
 
@@ -225,9 +225,9 @@ _PARSERS: tuple[_ConstraintParser, ...] = (
 )
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- / 分隔线
 # Public API / 公开 API
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- / 分隔线
 
 
 def parse_unique_constraint_error(text: str, *, detail_text: str = "") -> ConstraintDetail | None:
@@ -252,15 +252,14 @@ def parse_unique_constraint_error(text: str, *, detail_text: str = "") -> Constr
     return None
 
 
-# Unique constraint keywords for all supported databases.
-# 所有支持的数据库唯一约束关键字。
+# Unique constraint keywords for all supported databases. / 所有支持的数据库唯一约束关键字。
 _UNIQUE_KEYWORDS = (
     "duplicate key value violates unique constraint",  # PostgreSQL
-    "duplicate entry",                                  # MySQL / MariaDB
-    "unique constraint failed",                         # SQLite
-    "violation of unique key constraint",               # SQL Server
-    "ora-00001",                                        # Oracle
-    "already exists",                                   # generic
+    "duplicate entry",  # MySQL / MariaDB
+    "unique constraint failed",  # SQLite
+    "violation of unique key constraint",  # SQL Server
+    "ora-00001",  # Oracle
+    "already exists",  # generic
 )
 
 
@@ -380,9 +379,7 @@ def raise_unique_conflict(
     if parsed and (parsed.columns or parsed.values or parsed.constraint_name):
         row_numbers: list[int] = []
         if parsed.columns and parsed.values:
-            row_numbers = find_conflict_row_numbers(
-                valid_df, columns=parsed.columns, values=parsed.values
-            )
+            row_numbers = find_conflict_row_numbers(valid_df, columns=parsed.columns, values=parsed.values)
         payload: dict[str, Any] = {
             "columns": parsed.columns,
             "values": parsed.values,
@@ -396,9 +393,7 @@ def raise_unique_conflict(
 
         # Build human-readable conflict summary / 构建可读的冲突摘要
         if parsed.columns and parsed.values:
-            conflict = ", ".join(
-                f"{c}={v}" for c, v in zip(parsed.columns, parsed.values, strict=False)
-            )
+            conflict = ", ".join(f"{c}={v}" for c, v in zip(parsed.columns, parsed.values, strict=False))
         elif parsed.values:
             conflict = ", ".join(parsed.values)
         elif parsed.columns:

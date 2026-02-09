@@ -14,6 +14,18 @@ from fastapi_import_export.exceptions import ImportExportError
 
 
 def _load_backend() -> Any:
+    """
+    Load the validation backend.
+    加载校验后端。
+
+    Raises:
+        ImportExportError: If the backend cannot be imported.
+            如果无法导入后端则抛出 ImportExportError。
+    Returns:
+        The imported validation backend module.
+        导入的校验后端模块。
+
+    """
     try:
         from fastapi_import_export import validation_polars
 
