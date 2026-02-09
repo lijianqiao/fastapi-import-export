@@ -7,9 +7,11 @@
 资源基类与字段映射钩子。
 """
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
+
+from fastapi_import_export.codecs import Codec
 
 
 class Resource(BaseModel):
@@ -29,6 +31,9 @@ class Resource(BaseModel):
 
     field_aliases: ClassVar[dict[str, str]] = {}
     export_aliases: ClassVar[dict[str, str]] = {}
+    field_codecs: ClassVar[dict[str, Codec]] = {}
+    model: ClassVar[Any | None] = None
+    exclude_fields: ClassVar[list[str]] = []
 
     @classmethod
     def field_mapping(cls) -> dict[str, str]:
@@ -40,7 +45,20 @@ class Resource(BaseModel):
             dict[str, str]: Mapping from input header to resource field.
             dict[str, str]: 输入表头到资源字段的映射。
         """
-        return dict(cls.field_aliases)
+        mapping = {name: name for name in cls.field_order()}
+        mapping.update(cls.field_aliases)
+        return mapping
+
+    @classmethod
+    def field_order(cls) -> list[str]:
+        """
+        Return the field order for import/export.
+        返回导入导出的字段顺序。
+        """
+        declared = list(cls.model_fields.keys())
+        if declared:
+            return declared
+        return cls._infer_model_fields()
 
     @classmethod
     def export_mapping(cls) -> dict[str, str]:
@@ -64,4 +82,60 @@ class Resource(BaseModel):
 
     @classmethod
     def _identity_mapping(cls) -> dict[str, str]:
-        return {name: name for name in cls.model_fields.keys()}
+        return {name: name for name in cls.field_order()}
+
+    @classmethod
+    def _infer_model_fields(cls) -> list[str]:
+        model = cls.model
+        if model is None:
+            return []
+        fields: list[str] = []
+        excluded = cls._excluded_set()
+
+        table = getattr(model, "__table__", None)
+        columns = getattr(table, "columns", None) if table is not None else None
+        if columns is not None:
+            for col in list(columns):
+                name = str(getattr(col, "name", "") or "").strip()
+                if not name:
+                    continue
+                if cls._is_excluded(name=name, obj=col, excluded=excluded):
+                    continue
+                fields.append(name)
+            return fields
+
+        meta = getattr(model, "_meta", None)
+        fields_map = getattr(meta, "fields_map", None) if meta is not None else None
+        if isinstance(fields_map, dict):
+            projection = getattr(meta, "fields_db_projection", None)
+            names = list(projection.keys()) if isinstance(projection, dict) and projection else list(fields_map.keys())
+            for name in names:
+                field = fields_map.get(name)
+                if field is None:
+                    continue
+                field_name = str(name).strip()
+                if not field_name:
+                    continue
+                if cls._is_excluded(name=field_name, obj=field, excluded=excluded):
+                    continue
+                fields.append(field_name)
+            return fields
+
+        return []
+
+    @classmethod
+    def _excluded_set(cls) -> set[str]:
+        defaults = {"id", "created_at", "updated_at", "deleted_at", "is_deleted", "deleted"}
+        custom = {str(f).strip().lower() for f in cls.exclude_fields if str(f).strip()}
+        return defaults | custom
+
+    @classmethod
+    def _is_excluded(cls, *, name: str, obj: Any, excluded: set[str]) -> bool:
+        key = name.strip().lower()
+        if key in excluded:
+            return True
+        if getattr(obj, "primary_key", False) or getattr(obj, "pk", False):
+            return True
+        if getattr(obj, "generated", False):
+            return True
+        return False

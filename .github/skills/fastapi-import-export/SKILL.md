@@ -1,6 +1,6 @@
 ---
 name: fastapi-import-export
-description: FastAPI-first import/export toolkit with composable workflows and optional backends.
+description: FastAPI-first import/export toolkit with composable workflows and pluggable backends.
 ---
 
 # fastapi-import-export skill
@@ -23,15 +23,17 @@ common business needs, and an advanced hook-based layer for power users.
 - Easy API: `export_*` / `import_*` top-level functions.
 - Options: `ExportOptions` / `ImportOptions` (explicit configuration).
 - Advanced API: Importer/Exporter/ImportExportService under `fastapi_import_export.advanced`.
-- Facades: parse/storage/validation/db_validation optional backends.
+- Contrib ORM adapters: `fastapi_import_export.contrib.*` (requires `[sqlalchemy]` / `[sqlmodel]` / `[tortoise]`).
+- Facades: parse/storage/validation/db_validation pluggable backends.
 
 ## Capabilities
 
 - Async-first APIs for FastAPI.
 - Explicit field mapping to avoid ORM coupling.
-- Optional dependencies with clear missing-dependency errors.
+- Batteries-included dependencies; missing_dependency only when optional adapters/backends/drivers are missing.
 - Streaming export payloads.
 - Defaults that reduce boilerplate (media_type, line endings, mapping).
+- Built-in codecs for common types (Enum/Date/Datetime/Decimal/Bool).
 
 ## API Inventory
 
@@ -66,6 +68,9 @@ common business needs, and an advanced hook-based layer for power users.
 	- `field_mapping() -> dict[str, str]`
 	- `export_aliases: dict[str, str]`
 	- `export_mapping() -> dict[str, str]`
+	- `field_codecs: dict[str, Codec]`
+	- `model: Any | None`
+	- `exclude_fields: list[str]`
 - `Importer`
 	- `import_data(*, file, resource, allow_overwrite=False) -> ImportResult`
 	- `parse(*, file, resource) -> TTable`
@@ -98,7 +103,7 @@ common business needs, and an advanced hook-based layer for power users.
 
 **ImportExportError error_code list (common)**
 
-- `missing_dependency`: Optional backend dependency is not installed.
+- `missing_dependency`: Backend/adapter dependency is missing (bundled package removed or optional adapter not installed).
 - `unsupported_media_type`: File extension or MIME type is not allowed.
 - `import_export_error`: Default fallback code for generic errors.
 
@@ -139,7 +144,7 @@ common business needs, and an advanced hook-based layer for power users.
 - Errors:
 	- 413 when upload exceeds `max_upload_mb`
 	- 415 when extension or content type is not allowed
-	- missing dependency errors for optional backends
+	- missing dependency errors for removed bundles or external drivers
 
 **ImportExportService.preview**
 
@@ -191,8 +196,54 @@ common business needs, and an advanced hook-based layer for power users.
 ## Key Configuration
 
 - Upload allowlist via `resolve_config(allowed_extensions, allowed_mime_types)` or per-call override.
-- Optional dependencies via extras: `[polars,xlsx,storage]` or `[full]`.
+- Default install includes Polars/XLSX/storage; ORM adapters require the matching extra. Install DB drivers as needed.
 - Excel export uses `openpyxl` in easy layer.
+- Codecs can be overridden per field with `field_codecs`.
+- When `Resource.model` is set and no fields are declared, fields are inferred from the ORM model.
+- Easy layer applies codecs before `validate_fn/persist_fn` and formats values during export.
+
+## Codecs (Widget System)
+
+- Built-ins: Enum/Date/Datetime/Decimal/Bool.
+- ORM adapters automatically infer codecs based on field types.
+- Override per-field codecs via `field_codecs` / `__import_export_codecs__`.
+
+**Example (Enum/Date/Decimal)**
+
+```python
+from enum import Enum
+from fastapi_import_export import Resource
+from fastapi_import_export.codecs import DateCodec, DecimalCodec, EnumCodec
+
+
+class Status(Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+
+
+class BookResource(Resource):
+    field_codecs = {
+        "status": EnumCodec(Status),
+        "published_at": DateCodec(),
+        "price": DecimalCodec(),
+    }
+```
+
+## Resource Model Binding (Lightweight)
+
+Rules when `Resource.model` is set **and no fields are declared**:
+
+- Source: `model.__table__.columns` (SQLAlchemy/SQLModel) or `model._meta` (Tortoise)
+- Auto-exclude: primary key (`id`), `created_at`, `updated_at`, soft-delete flags
+- Configurable: `exclude_fields = ["password"]`
+- Explicit wins: `field_aliases` overrides auto mapping (merge: auto mapping then update with `field_aliases`)
+
+```python
+class BookResource(Resource):
+    model = Book
+    exclude_fields = ["password"]
+    field_aliases = {"Author": "author"}
+```
 
 ## Example Snippets
 
@@ -343,7 +394,7 @@ svc = ImportExportService(db=object(), config=cfg)
 - `fastapi_import_export.advanced.Importer` for custom parse/validate/transform/persist.
 - `fastapi_import_export.advanced.Exporter` for custom query/serialize/render.
 - `fastapi_import_export.advanced.ImportExportService` for upload/preview/commit workflows.
-- Facades: `parse`, `validation`, `db_validation`, `storage` to plug optional backends.
+- Facades: `parse`, `validation`, `db_validation`, `storage` to plug backends.
 
 ### Custom Serializer/Renderer
 
@@ -364,11 +415,11 @@ svc = ImportExportService(db=object(), config=cfg)
   - `serialize` returns bytes.
   - `render` returns an async byte stream.
 
-### Optional Backends (Facades)
+### Pluggable Backends (Facades)
 
-- `parse` and `validation` default to Polars backends when installed.
-- `storage` defaults to filesystem storage when installed.
-- Missing backend raises `ImportExportError(error_code="missing_dependency")`.
+- `parse` and `validation` default to Polars backends (bundled by default).
+- `storage` defaults to filesystem storage (bundled by default).
+- Missing backend errors only occur if bundled deps are removed or external drivers are missing.
 
 ## Default Behaviors (Easy Layer)
 

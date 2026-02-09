@@ -13,6 +13,8 @@ from typing import Any
 
 from fastapi import UploadFile
 
+from fastapi_import_export.codecs import Codec
+from fastapi_import_export.exceptions import ImportExportError
 from fastapi_import_export.exporter import ExportPayload
 from fastapi_import_export.formats import (
     CSV_ALLOWED_EXTENSIONS,
@@ -255,10 +257,31 @@ async def _import_file(
             导入过程的结果，包括状态、导入行数和错误（如果有）。
     """
     svc = ImportExportService(db=options.db)
+    codecs = resource.field_codecs if resource is not None else {}
+
+    async def wrapped_validate_fn(db, df, *, allow_overwrite: bool = False):
+        if not codecs:
+            return await validate_fn(db, df, allow_overwrite=allow_overwrite)
+        decoded_df, decode_errors = _decode_df_with_codecs(df, codecs)
+        valid_df, errors = await validate_fn(db, decoded_df, allow_overwrite=allow_overwrite)
+        encoded_df = _encode_df_with_codecs(valid_df, codecs)
+        return encoded_df, decode_errors + errors
+
+    async def wrapped_persist_fn(db, valid_df, *, allow_overwrite: bool = False):
+        if not codecs:
+            return await persist_fn(db, valid_df, allow_overwrite=allow_overwrite)
+        decoded_df, decode_errors = _decode_df_with_codecs(valid_df, codecs)
+        if decode_errors:
+            raise ImportExportError(
+                message="Codec parse failed during commit / Codec 解析失败",
+                details=decode_errors[:50],
+            )
+        return await persist_fn(db, decoded_df, allow_overwrite=allow_overwrite)
+
     validate_resp = await svc.upload_parse_validate(
         file=file,
         column_aliases=resource.field_mapping(),
-        validate_fn=validate_fn,
+        validate_fn=wrapped_validate_fn,
         allow_overwrite=options.allow_overwrite,
         unique_fields=options.unique_fields,
         db_checks=options.db_checks,
@@ -273,7 +296,7 @@ async def _import_file(
             checksum=validate_resp.checksum,
             allow_overwrite=options.allow_overwrite,
         ),
-        persist_fn=persist_fn,
+        persist_fn=wrapped_persist_fn,
     )
     return ImportResult(status=ImportStatus.COMMITTED, imported_rows=commit.imported_rows, errors=[])
 
@@ -364,20 +387,25 @@ def _normalize_rows(
         tuple: A tuple containing the list of normalized rows and the list of output columns.
             包含规范化行列表和输出列列表的元组。
     """
-    rows = _to_rows(data)
+    rows = _to_rows(data, resource=resource)
     mapping = resource.export_mapping() if resource is not None else {}
-    ordered = columns or (list(resource.model_fields.keys()) if resource is not None else _infer_columns(rows))
+    ordered = columns or (resource.field_order() if resource is not None else _infer_columns(rows))
+    codecs = resource.field_codecs if resource is not None else {}
     output_columns = [mapping.get(col, col) for col in ordered]
     output: list[dict[str, Any]] = []
     for row in rows:
         out: dict[str, Any] = {}
         for col in ordered:
-            out[mapping.get(col, col)] = row.get(col)
+            value = row.get(col)
+            codec = codecs.get(col)
+            if codec is not None:
+                value = codec.format(value)
+            out[mapping.get(col, col)] = value
         output.append(out)
     return output, output_columns
 
 
-def _to_rows(data: Any) -> list[dict[str, Any]]:
+def _to_rows(data: Any, *, resource: type[Resource] | None) -> list[dict[str, Any]]:
     """Convert input data to a list of dict rows.
     将输入数据转换为字典行列表。
 
@@ -395,8 +423,72 @@ def _to_rows(data: Any) -> list[dict[str, Any]]:
     if isinstance(data, (str, bytes)):
         raise TypeError("export source must be iterable rows or DataFrame / 导出源必须是可迭代行或 DataFrame")
     if isinstance(data, Iterable):
-        return [dict(r) for r in data]
+        rows: list[dict[str, Any]] = []
+        for item in data:
+            rows.append(_coerce_row(item, resource=resource))
+        return rows
     raise TypeError("export source must be iterable rows or DataFrame / 导出源必须是可迭代行或 DataFrame")
+
+
+def _coerce_row(item: Any, *, resource: type[Resource] | None) -> dict[str, Any]:
+    if isinstance(item, Mapping):
+        return dict(item)
+    if resource is not None:
+        fields = resource.field_order()
+        if not fields:
+            raise TypeError("resource has no fields; cannot export object rows / 资源未定义字段，无法导出对象行")
+        return {field: getattr(item, field, None) for field in fields}
+    raise TypeError("export rows must be mappings unless resource is provided / 导出行必须是映射，除非提供 resource")
+
+
+def _decode_df_with_codecs(df: Any, codecs: dict[str, Codec]) -> tuple[Any, list[dict[str, Any]]]:
+    import polars as pl
+
+    rows = df.to_dicts() if not df.is_empty() else []
+    decoded_rows: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for row in rows:
+        row_number = int(row.get("row_number") or 0)
+        decoded: dict[str, Any] = dict(row)
+        decoded["row_number"] = row_number
+        has_error = False
+        for field, codec in codecs.items():
+            if field not in row:
+                continue
+            raw = row.get(field)
+            raw_text = "" if raw is None else str(raw).strip()
+            try:
+                decoded[field] = codec.parse(raw_text)
+            except Exception:
+                errors.append(
+                    {
+                        "row_number": row_number,
+                        "field": field,
+                        "message": f"Invalid value for {field}: {raw_text} / 字段 {field} 格式错误: {raw_text}",
+                        "type": "format",
+                        "value": raw_text,
+                    }
+                )
+                has_error = True
+        if not has_error:
+            decoded_rows.append(decoded)
+    decoded_df = pl.DataFrame(decoded_rows) if decoded_rows else pl.DataFrame()
+    return decoded_df, errors
+
+
+def _encode_df_with_codecs(df: Any, codecs: dict[str, Codec]) -> Any:
+    import polars as pl
+
+    rows = df.to_dicts() if not df.is_empty() else []
+    encoded_rows: list[dict[str, Any]] = []
+    for row in rows:
+        encoded: dict[str, Any] = dict(row)
+        for field, codec in codecs.items():
+            if field not in row:
+                continue
+            encoded[field] = codec.format(row.get(field))
+        encoded_rows.append(encoded)
+    return pl.DataFrame(encoded_rows) if encoded_rows else pl.DataFrame()
 
 
 def _is_polars_df(value: Any) -> bool:

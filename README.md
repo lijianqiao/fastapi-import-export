@@ -8,7 +8,7 @@ Other languages: [README_CN.md](README_CN.md) | [README_JP.md](README_JP.md)
 
 - Async-first lifecycle hooks for import and export.
 - Explicit Resource mapping to avoid ORM coupling.
-- Optional backends for parsing, storage, and validation.
+- Pluggable backends for parsing, storage, and validation.
 - Streaming export payloads for large datasets.
 
 ## Requirements
@@ -23,8 +23,8 @@ Other languages: [README_CN.md](README_CN.md) | [README_JP.md](README_JP.md)
 | Python    | 3.12-3.14 | Tested with async-first workflows.   |
 | FastAPI   | 0.128+    | Uses UploadFile and async endpoints. |
 | Pydantic  | 2.x       | Schemas rely on BaseModel.           |
-| polars    | 1.x       | Optional parsing/validation backend. |
-| openpyxl  | 3.x       | Excel parsing backend.               |
+| polars    | 1.x       | Included by default.                 |
+| openpyxl  | 3.x       | Included by default.                 |
 
 ## Why Not django-import-export
 
@@ -37,11 +37,11 @@ Other languages: [README_CN.md](README_CN.md) | [README_JP.md](README_JP.md)
 - Do not manage DB connections.
 - Do not own ORM, only adapt.
 - Do not handle auth.
-- Do not own storage (optional backends only).
+- Do not own storage (pluggable backends only).
 
 ## Install
 
-Minimal (core only):
+Standard install (batteries included):
 
 ```bash
 pip install fastapi-import-export
@@ -49,44 +49,39 @@ pip install fastapi-import-export
 uv add fastapi-import-export
 ```
 
-Common optional deps:
+Includes Polars/XLSX/storage helpers. ORM adapters are optional:
 
 ```bash
-pip install fastapi-import-export[polars,xlsx,storage]
+pip install fastapi-import-export[sqlalchemy]
 # or
-uv add fastapi-import-export[polars,xlsx,storage]
+pip install fastapi-import-export[sqlmodel]
+# or
+pip install fastapi-import-export[tortoise]
+# or
+uv add fastapi-import-export[sqlalchemy]
+# or
+uv add fastapi-import-export[sqlmodel]
+# or
+uv add fastapi-import-export[tortoise]
 ```
 
-All optional deps:
-
-```bash
-pip install fastapi-import-export[full]
-# or
-uv add fastapi-import-export[full]
-```
+Install your database driver separately if needed (e.g. `asyncpg`, `aiomysql`).
 
 Development & unit-test deps:
 
 ```bash
-pip install fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+pip install fastapi-import-export pytest pytest-asyncio pytest-cov anyio
 # or
-uv add --group dev fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+uv add --group dev fastapi-import-export pytest pytest-asyncio pytest-cov anyio
 ```
 
 E2E integration-test deps (optional, for running example apps):
 
 ```bash
-pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel tortoise-orm
+pip install fastapi-import-export[sqlalchemy] httpx python-multipart aiosqlite
 # or
-uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel tortoise-orm
+uv add --group e2e fastapi-import-export[sqlalchemy] httpx python-multipart aiosqlite
 ```
-
-## Extras
-
-- polars: DataFrame parsing and validation backends.
-- xlsx: Excel parsing support (openpyxl + fastexcel + xlsxwriter).
-- storage: Filesystem storage backend helpers.
-- full: All optional dependencies.
 
 ## Quick Start (Easy)
 
@@ -150,6 +145,69 @@ async def query_fn(*, resource, params=None):
 
 payload = await export_csv(query_fn, resource=UserResource)
 return StreamingResponse(payload.stream, media_type=payload.media_type)
+```
+
+## ORM Adapters (Optional)
+
+Adapters live under `fastapi_import_export.contrib` for SQLAlchemy/SQLModel/Tortoise.
+Install one of:
+
+```bash
+pip install fastapi-import-export[sqlalchemy]
+# or
+pip install fastapi-import-export[sqlmodel]
+# or
+pip install fastapi-import-export[tortoise]
+```
+
+What you get:
+
+- Auto field inference from ORM models (column order and required fields).
+- Auto type conversion via codecs (Enum/Date/Datetime/Decimal/Bool).
+- Override per-field codecs with `field_codecs` / `__import_export_codecs__`.
+
+## Codecs (Widget System)
+
+Codecs handle common type conversion for import/export. Built-ins include
+Enum/Date/Datetime/Decimal/Bool. You can register custom codecs per field.
+Easy layer automatically applies codecs before `validate_fn/persist_fn`, and
+formats values during export.
+
+```python
+from enum import Enum
+
+from fastapi_import_export import Resource
+from fastapi_import_export.codecs import DateCodec, DecimalCodec, EnumCodec
+
+
+class Status(Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+
+
+class BookResource(Resource):
+    field_codecs = {
+        "status": EnumCodec(Status),
+        "published_at": DateCodec(),
+        "price": DecimalCodec(),
+    }
+```
+
+## Resource Model Binding (Lightweight)
+
+If a Resource declares `model` but **does not declare fields**, the library
+infers fields from the ORM model:
+
+- Source: `model.__table__.columns` (SQLAlchemy/SQLModel) or `model._meta` (Tortoise)
+- Auto-exclude: primary key (`id`), `created_at`, `updated_at`, and soft-delete flags
+- Configurable: `exclude_fields = ["password"]`
+- Explicit wins: `field_aliases` always overrides auto mapping
+
+```python
+class BookResource(Resource):
+    model = Book
+    exclude_fields = ["password"]
+    field_aliases = {"Author": "author"}  # overrides auto mapping
 ```
 
 ## Advanced (Hooks)
@@ -279,10 +337,12 @@ payload = await exporter.stream(
 )
 ```
 
-## Optional Backend Facades
+## Pluggable Backend Facades
 
 - parse/storage/validation/db_validation are lazy-loaded facades.
-- Missing extras raise ImportExportError with a clear install hint.
+- Missing dependencies only occur if you remove bundled packages or use an
+  optional adapter/backend/driver that is not installed (e.g. ORM adapters without
+  installing the matching extra).
 
 ## Upload Allowlist Configuration
 
@@ -443,13 +503,9 @@ async def import_commit(body: ImportCommitRequest):
 
 **Why do I get missing dependency errors?**
 
-Install the matching extras, for example:
-
-```bash
-pip install fastapi-import-export[polars,xlsx,storage]
-# or
-uv add fastapi-import-export[polars,xlsx,storage]
-```
+You likely removed bundled dependencies or are using an optional adapter/driver
+that is not installed (e.g. ORM adapters without the matching extra). Reinstall the base
+package or add the missing adapter/driver.
 
 **Why are my rows filtered after validation?**
 
@@ -460,7 +516,7 @@ Use preview with `kind=all` to inspect the original parsed data.
 
 - **Upload too large**: Increase `max_upload_mb` when creating `ImportExportService`.
 - **checksum mismatch**: Ensure the client passes the checksum from `upload_parse_validate`.
-- **missing_dependency**: Install the correct extras for parse/storage/validation backends.
+- **missing_dependency**: Reinstall bundled dependencies or install the required adapter/driver.
 - **db_conflict errors**: Check unique constraints and whether soft-deleted records exist.
 
 ## Testing

@@ -8,7 +8,7 @@ FastAPI を優先したインポート/エクスポート用ユーティリテ�
 
 - インポート/エクスポートのライフサイクルフックは非同期優先。
 - Resource を明示的にマッピングし、ORM との強い結合を回避。
-- 解析/保存/検証は必要に応じて有効化できるオプションバックエンド。
+- 解析/保存/検証は必要に応じて切り替え可能なプラガブルバックエンド。
 - 大規模データに対応したストリーミング出力。
 
 ## 動作環境
@@ -23,8 +23,8 @@ FastAPI を優先したインポート/エクスポート用ユーティリテ�
 | Python         | 3.12-3.14 | 非同期ワークフロー向けに検証。            |
 | FastAPI        | 0.128+    | UploadFile と非同期エンドポイントを使用。 |
 | Pydantic       | 2.x       | BaseModel を利用。                        |
-| polars         | 1.x       | 解析/検証のオプションバックエンド。       |
-| openpyxl       | 3.x       | Excel 解析バックエンド。                  |
+| polars         | 1.x       | デフォルトで同梱。                        |
+| openpyxl       | 3.x       | デフォルトで同梱。                        |
 
 ## django-import-export を使わない理由
 
@@ -37,11 +37,11 @@ FastAPI を優先したインポート/エクスポート用ユーティリテ�
 - DB 接続は管理しない。
 - ORM を所有せず、適応のみ。
 - 認可/認証は扱わない。
-- ストレージは所有しない（オプションバックエンドのみ）。
+- ストレージは所有しない（プラガブルバックエンドのみ）。
 
 ## インストール
 
-最小構成（コアのみ）：
+標準インストール（バッテリー同梱）：
 
 ```bash
 pip install fastapi-import-export
@@ -49,44 +49,39 @@ pip install fastapi-import-export
 uv add fastapi-import-export
 ```
 
-よく使うオプション依存：
+Polars/XLSX/ストレージ補助はデフォルトで含まれます。ORM アダプタは任意です：
 
 ```bash
-pip install fastapi-import-export[polars,xlsx,storage]
+pip install fastapi-import-export[sqlalchemy]
 # または
-uv add fastapi-import-export[polars,xlsx,storage]
+pip install fastapi-import-export[sqlmodel]
+# または
+pip install fastapi-import-export[tortoise]
+# または
+uv add fastapi-import-export[sqlalchemy]
+# または
+uv add fastapi-import-export[sqlmodel]
+# または
+uv add fastapi-import-export[tortoise]
 ```
 
-全オプション依存：
-
-```bash
-pip install fastapi-import-export[full]
-# または
-uv add fastapi-import-export[full]
-```
+必要に応じて DB ドライバ（例: `asyncpg`、`aiomysql`）を別途インストールしてください。
 
 開発・ユニットテスト依存：
 
 ```bash
-pip install fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+pip install fastapi-import-export pytest pytest-asyncio pytest-cov anyio
 # または
-uv add --group dev fastapi-import-export[full] pytest pytest-asyncio pytest-cov anyio
+uv add --group dev fastapi-import-export pytest pytest-asyncio pytest-cov anyio
 ```
 
 E2E 統合テスト依存（任意、サンプルアプリ実行用）：
 
 ```bash
-pip install httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel tortoise-orm
+pip install fastapi-import-export[sqlalchemy] httpx python-multipart aiosqlite
 # または
-uv add --group e2e httpx python-multipart "sqlalchemy[asyncio]" aiosqlite sqlmodel tortoise-orm
+uv add --group e2e fastapi-import-export[sqlalchemy] httpx python-multipart aiosqlite
 ```
-
-## オプション依存の説明
-
-- polars: DataFrame の解析/検証バックエンド。
-- xlsx: Excel 解析サポート（openpyxl + fastexcel + xlsxwriter）。
-- storage: ファイルシステム保存バックエンド。
-- full: すべてのオプション依存。
 
 ## クイックスタート（易用層）
 
@@ -150,6 +145,69 @@ async def query_fn(*, resource, params=None):
 
 payload = await export_csv(query_fn, resource=UserResource)
 return StreamingResponse(payload.stream, media_type=payload.media_type)
+```
+
+## ORM アダプタ（任意）
+
+ORM アダプタは `fastapi_import_export.contrib` にあり、SQLAlchemy/SQLModel/Tortoise をサポートします。
+インストール方法：
+
+```bash
+pip install fastapi-import-export[sqlalchemy]
+# または
+pip install fastapi-import-export[sqlmodel]
+# または
+pip install fastapi-import-export[tortoise]
+```
+
+得られるもの：
+
+- ORM モデルのフィールド自動推論（列順・必須判定）。
+- 自動型変換（Enum/Date/Datetime/Decimal/Bool）。
+- `field_codecs` / `__import_export_codecs__` でフィールド単位に上書き可能。
+
+## Codecs（Widget システム）
+
+Codecs は一般的な型の import/export 変換を担当します。
+Enum/Date/Datetime/Decimal/Bool を内蔵し、フィールド単位で拡張できます。
+Easy レイヤーは `validate_fn/persist_fn` の前に codecs を適用し、
+エクスポート時に値をフォーマットします。
+
+```python
+from enum import Enum
+
+from fastapi_import_export import Resource
+from fastapi_import_export.codecs import DateCodec, DecimalCodec, EnumCodec
+
+
+class Status(Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+
+
+class BookResource(Resource):
+    field_codecs = {
+        "status": EnumCodec(Status),
+        "published_at": DateCodec(),
+        "price": DecimalCodec(),
+    }
+```
+
+## Resource モデルバインディング（軽量）
+
+Resource が `model` を宣言し、**フィールドを明示しない**場合、
+ORM モデルから自動推論します：
+
+- 取得元：`model.__table__.columns`（SQLAlchemy/SQLModel）または `model._meta`（Tortoise）
+- 自動除外：主キー（`id`）、`created_at`、`updated_at`、ソフトデリート系
+- 任意除外：`exclude_fields = ["password"]`
+- 明示優先：`field_aliases` が自動マッピングを常に上書き
+
+```python
+class BookResource(Resource):
+    model = Book
+    exclude_fields = ["password"]
+    field_aliases = {"Author": "author"}  # 自動マッピングを上書き
 ```
 
 ## 高度（Hooks）
@@ -278,10 +336,11 @@ payload = await exporter.stream(
 )
 ```
 
-## オプションバックエンドのファサード
+## プラガブルバックエンドのファサード
 
 - parse/storage/validation/db_validation は遅延読み込みのファサード。
-- オプション依存が不足すると ImportExportError を送出し、インストール手順を提示。
+- バンドル済み依存を外した場合や任意アダプタ/ドライバ未導入時に
+  missing_dependency を返します。
 
 ## アップロード許可リスト設定
 
@@ -442,13 +501,9 @@ async def import_commit(body: ImportCommitRequest):
 
 **依存関係が不足していると表示されるのはなぜですか？**
 
-該当する extras をインストールしてください。例：
-
-```bash
-pip install fastapi-import-export[polars,xlsx,storage]
-# または
-uv add fastapi-import-export[polars,xlsx,storage]
-```
+バンドル依存を削除したか、未導入のアダプタ/ドライバを使っています
+（例: ORM アダプタを使うが対応する extra を入れていない）。
+ベースパッケージの再インストール、または必要な依存を追加してください。
 
 **検証後にデータがフィルタされるのはなぜですか？**
 
@@ -459,7 +514,7 @@ uv add fastapi-import-export[polars,xlsx,storage]
 
 - **アップロードが大きすぎる**: `ImportExportService` 作成時に `max_upload_mb` を増やしてください。
 - **checksum が一致しない**: `upload_parse_validate` が返した checksum をクライアントで使用してください。
-- **missing_dependency**: 解析/保存/検証の extras をインストールしてください。
+- **missing_dependency**: バンドル依存の復元、または必要なアダプタ/ドライバを追加してください。
 - **db_conflict**: 一意制約や論理削除レコードの影響を確認してください。
 
 ## テスト

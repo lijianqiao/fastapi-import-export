@@ -7,10 +7,15 @@
 易用层 API 测试。
 """
 
+from datetime import date
+from decimal import Decimal
+from enum import Enum
+
 import polars as pl
 import pytest
 
 from fastapi_import_export import export_csv, export_xlsx, import_csv
+from fastapi_import_export.codecs import DateCodec, DecimalCodec, EnumCodec
 from fastapi_import_export.importer import ImportStatus
 from fastapi_import_export.options import ExportOptions
 from fastapi_import_export.resource import Resource
@@ -22,6 +27,24 @@ class UserResource(Resource):
     id: int | None = None
     username: str
     email: str
+
+
+class Status(Enum):
+    AVAILABLE = "可借阅"
+    UNAVAILABLE = "不可借阅"
+
+
+class BookResource(Resource):
+    title: str
+    status: str
+    published_at: str
+    price: str
+
+    field_codecs = {
+        "status": EnumCodec(Status),
+        "published_at": DateCodec(),
+        "price": DecimalCodec(),
+    }
 
 
 @pytest.mark.asyncio
@@ -92,3 +115,52 @@ def test_serializer_csv_default_no_bom() -> None:
     rows = [{"a": 1}]
     data = CsvSerializer().serialize(data=rows, options=ExportOptions())
     assert not data.startswith(b"\xef\xbb\xbf")
+
+
+@pytest.mark.asyncio
+async def test_easy_import_csv_applies_codecs() -> None:
+    csv = "title,status,published_at,price\nBook,可借阅,2010-01-01,139.00\n"
+    file = make_upload_file("books.csv", csv.encode())
+
+    async def validate_fn(db, df, *, allow_overwrite: bool = False):
+        row = df.to_dicts()[0]
+        assert isinstance(row["status"], Status)
+        assert row["published_at"] == date(2010, 1, 1)
+        assert row["price"] == Decimal("139.00")
+        return df, []
+
+    async def persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
+        row = valid_df.to_dicts()[0]
+        assert isinstance(row["status"], Status)
+        assert row["published_at"] == date(2010, 1, 1)
+        assert row["price"] == Decimal("139.00")
+        return int(valid_df.height)
+
+    result = await import_csv(
+        file,
+        resource=BookResource,
+        validate_fn=validate_fn,
+        persist_fn=persist_fn,
+    )
+    assert result.status == ImportStatus.COMMITTED
+    assert result.imported_rows == 1
+
+
+@pytest.mark.asyncio
+async def test_easy_export_object_rows() -> None:
+    class Book:
+        def __init__(self, title: str, price: Decimal):
+            self.title = title
+            self.price = price
+
+    class SimpleBookResource(Resource):
+        title: str
+        price: str
+        field_codecs = {"price": DecimalCodec()}
+
+    rows = [Book("A", Decimal("139.00")), Book("B", Decimal("10.50"))]
+    payload = await export_csv(rows, resource=SimpleBookResource)
+    data = b"".join([chunk async for chunk in payload.stream])
+    assert b"title" in data
+    assert b"price" in data
+    assert b"A" in data
