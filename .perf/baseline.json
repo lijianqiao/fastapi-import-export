@@ -1,0 +1,45 @@
+{
+  "config": {
+    "rows": 100,
+    "file_kind": "csv",
+    "preview_page_size": 100,
+    "rounds": 2,
+    "warmup": 1,
+    "seed": 42,
+    "baseline_json": "",
+    "regression_threshold": 0.05,
+    "fail_on_regression": false
+  },
+  "summary": {
+    "upload_parse_validate_median_seconds": 0.005276,
+    "upload_parse_validate_p95_seconds": 0.005727,
+    "preview_median_seconds": 0.001978,
+    "preview_p95_seconds": 0.002104,
+    "commit_median_seconds": 0.001638,
+    "commit_p95_seconds": 0.001662,
+    "total_median_seconds": 0.008893,
+    "total_p95_seconds": 0.009445
+  },
+  "runs": [
+    {
+      "rows": 100,
+      "file_kind": "csv",
+      "upload_parse_validate_seconds": 0.005727,
+      "preview_seconds": 0.002104,
+      "commit_seconds": 0.001613,
+      "total_seconds": 0.009445,
+      "valid_rows": 100,
+      "error_rows": 0
+    },
+    {
+      "rows": 100,
+      "file_kind": "csv",
+      "upload_parse_validate_seconds": 0.004826,
+      "preview_seconds": 0.001852,
+      "commit_seconds": 0.001662,
+      "total_seconds": 0.00834,
+      "valid_rows": 100,
+      "error_rows": 0
+    }
+  ]
+}

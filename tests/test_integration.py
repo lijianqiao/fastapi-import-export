@@ -146,3 +146,75 @@ class TestChineseHeadersImport:
         )
         assert validate_resp.total_rows == 1
         assert validate_resp.valid_rows == 1
+
+
+class TestLifecycleMatrix:
+    """Lifecycle matrix tests for format and overwrite mode.
+    针对格式与覆盖策略的生命周期矩阵测试。
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("fmt", ["csv", "xlsx"])
+    @pytest.mark.parametrize("overwrite_mode", ["reject", "upsert", "replace"])
+    async def test_format_overwrite_mode_matrix(
+        self,
+        svc: ImportExportService,
+        tmp_config: ImportExportConfig,
+        sample_xlsx_path: Path,
+        fmt: str,
+        overwrite_mode: str,
+    ) -> None:
+        """Validate preview and commit should work across format x overwrite_mode matrix.
+        validate/preview/commit 在 format x overwrite_mode 矩阵下应稳定工作。
+        """
+        if fmt == "csv":
+            file = make_upload_file("matrix.csv", b"name,email\nalice,alice@b.com\nbob,bob@b.com\n")
+            expected_rows = 2
+        else:
+            file = make_upload_file(
+                "matrix.xlsx",
+                sample_xlsx_path.read_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            expected_rows = 5
+
+        validate_resp = await svc.upload_parse_validate(
+            file=file,
+            column_aliases={},
+            validate_fn=_validate_pass,
+            overwrite_mode=overwrite_mode,
+        )
+        assert validate_resp.total_rows == expected_rows
+
+        preview_resp = await svc.preview(
+            import_id=validate_resp.import_id,
+            checksum=validate_resp.checksum,
+            page=1,
+            page_size=2,
+            kind="all",
+        )
+        assert preview_resp.total_rows == expected_rows
+
+        commit_resp = await svc.commit(
+            body=ImportCommitRequest(
+                import_id=validate_resp.import_id,
+                checksum=validate_resp.checksum,
+                overwrite_mode=overwrite_mode,
+            ),
+            persist_fn=_persist,
+        )
+        assert commit_resp.status == "committed"
+        assert commit_resp.imported_rows == expected_rows
+
+        paths = get_import_paths(validate_resp.import_id, config=tmp_config)
+        meta = read_meta(paths)
+        assert meta.get("overwrite_mode") == overwrite_mode
+
+    @pytest.mark.asyncio
+    async def test_csv_with_utf8_bom(self, svc: ImportExportService) -> None:
+        """UTF-8 BOM CSV should be parsed correctly / UTF-8 BOM 的 CSV 应被正确解析。"""
+        csv_with_bom = b"\xef\xbb\xbfname,email\nalice,alice@b.com\n"
+        file = make_upload_file("bom.csv", csv_with_bom)
+        validate_resp = await svc.upload_parse_validate(file=file, column_aliases={}, validate_fn=_validate_pass)
+        assert validate_resp.total_rows == 1
+        assert validate_resp.valid_rows == 1

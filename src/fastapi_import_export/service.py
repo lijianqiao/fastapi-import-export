@@ -64,6 +64,7 @@ from fastapi_import_export.service_types import (
     ExportDfFn,
     ExportResult,
     RedisLike,
+    ServiceEventHook,
     ServicePersistFn,
     ServiceValidateFn,
 )
@@ -167,6 +168,7 @@ class ImportExportService:
         *,
         db: Any,
         redis_client: RedisLike | None = None,
+        event_hook: ServiceEventHook | None = None,
         config: ImportExportConfig | None = None,
         base_dir: str | None = None,
         max_upload_mb: int = 20,
@@ -181,6 +183,8 @@ class ImportExportService:
                 数据库对象（会原样传递给 handler）。
             redis_client: Optional Redis client for locking.
                 Redis 客户端（可选，用于加锁）。
+            event_hook: Optional service lifecycle event hook.
+                可选的服务生命周期事件 Hook。
             config: Optional import/export config.
                 导入导出配置（可选）。
             base_dir: Optional base dir override for config.
@@ -192,9 +196,35 @@ class ImportExportService:
         """
         self.db = db
         self.redis_client = redis_client
+        self.event_hook = event_hook
         self.config = config or resolve_config(base_dir=base_dir)
         self.max_upload_mb = max_upload_mb
         self.lock_ttl_seconds = lock_ttl_seconds
+
+    async def _emit_event(self, name: str, **payload: Any) -> None:
+        """Emit a structured service event if hook is configured.
+
+        若配置了 Hook，则发送结构化服务事件。
+
+        Notes:
+            - Hook failures are swallowed by design.
+              Hook 异常默认吞掉，不影响主业务流程。
+            - `event` payload always contains `name` and `ts`.
+              `event` 载荷始终包含 `name` 与 `ts` 字段。
+
+        Args:
+            name: Event name.
+                事件名称。
+            **payload: Additional event fields.
+                额外事件字段。
+        """
+        if self.event_hook is None:
+            return
+        event = {"name": name, "ts": now_ts(), **payload}
+        try:
+            await _maybe_await(self.event_hook(event))
+        except Exception:
+            return
 
     async def export_table(
         self,
@@ -411,6 +441,13 @@ class ImportExportService:
                 allow_overwrite=allow_overwrite,
                 overwrite_mode=overwrite_mode,
             )
+            await self._emit_event(
+                "upload_parse_validate.started",
+                import_id=str(import_id),
+                filename=filename,
+                content_type=content_type,
+                overwrite_mode=str(resolved_mode),
+            )
             meta["overwrite_mode"] = str(resolved_mode)
             write_meta(paths, meta)
 
@@ -468,8 +505,22 @@ class ImportExportService:
             meta["valid_rows"] = resp.valid_rows
             meta["error_rows"] = resp.error_rows
             write_meta(paths, meta)
+            await self._emit_event(
+                "upload_parse_validate.completed",
+                import_id=str(import_id),
+                checksum=checksum,
+                total_rows=resp.total_rows,
+                valid_rows=resp.valid_rows,
+                error_rows=resp.error_rows,
+                overwrite_mode=str(resolved_mode),
+            )
             return resp
-        except Exception:
+        except Exception as exc:
+            await self._emit_event(
+                "upload_parse_validate.failed",
+                import_id=str(import_id),
+                error=str(exc),
+            )
             if not parsed_ok:
                 # Only clean up when parsing failed; preserve artifacts for / 仅在解析失败时清理；为校验阶段重试保留中间产物。
                 # validation-stage retries. / 校验阶段重试。
@@ -510,45 +561,83 @@ class ImportExportService:
             ImportExportError: When page/page_size/kind is invalid or checksum mismatches.
                 page/page_size/kind 参数非法或 checksum 不匹配时抛出。
         """
-        paths = get_import_paths(import_id, config=self.config)
-        if page < 1:
-            raise ImportExportError(message="page must be >= 1 / page 必须 >= 1")
-        if page_size < 1 or page_size > 500:
-            raise ImportExportError(message="page_size must be in 1..500 / page_size 必须在 1..500 之间")
-        if kind not in {"all", "valid"}:
-            raise ImportExportError(message="kind must be all or valid / kind 必须为 all 或 valid")
-        meta = read_meta(paths)
-        if str(meta.get("checksum")) != checksum:
-            raise ImportExportError(message="checksum mismatch / checksum 不匹配")
+        await self._emit_event(
+            "preview.started",
+            import_id=str(import_id),
+            page=page,
+            page_size=page_size,
+            kind=kind,
+        )
+        try:
+            paths = get_import_paths(import_id, config=self.config)
+            if page < 1:
+                raise ImportExportError(message="page must be >= 1 / page 必须 >= 1")
+            if page_size < 1 or page_size > 500:
+                raise ImportExportError(message="page_size must be in 1..500 / page_size 必须在 1..500 之间")
+            if kind not in {"all", "valid"}:
+                raise ImportExportError(message="kind must be all or valid / kind 必须为 all 或 valid")
+            meta = read_meta(paths)
+            if str(meta.get("checksum")) != checksum:
+                raise ImportExportError(message="checksum mismatch / checksum 不匹配")
 
-        parquet = paths.valid_parquet if kind == "valid" else paths.parsed_parquet
-        if not parquet.exists():
-            return ImportPreviewResponse(
+            parquet = paths.valid_parquet if kind == "valid" else paths.parsed_parquet
+            if not parquet.exists():
+                resp = ImportPreviewResponse(
+                    import_id=import_id,
+                    checksum=checksum,
+                    page=page,
+                    page_size=page_size,
+                    total_rows=0,
+                    rows=[],
+                )
+                await self._emit_event(
+                    "preview.completed",
+                    import_id=str(import_id),
+                    page=page,
+                    page_size=page_size,
+                    kind=kind,
+                    total_rows=0,
+                    rows_count=0,
+                )
+                return resp
+
+            pl = _require_polars()
+            df = pl.scan_parquet(parquet).slice((page - 1) * page_size, page_size).collect()
+            total_rows = int(pl.scan_parquet(parquet).select(pl.len()).collect()[0, 0])
+            rows: list[ImportPreviewRow] = []
+            for r in df.to_dicts():
+                row_number = int(r.get("row_number") or 0)
+                data = {k: v for k, v in r.items() if k != "row_number"}
+                rows.append(ImportPreviewRow(row_number=row_number, data=data))
+
+            resp = ImportPreviewResponse(
                 import_id=import_id,
                 checksum=checksum,
                 page=page,
                 page_size=page_size,
-                total_rows=0,
-                rows=[],
+                total_rows=total_rows,
+                rows=rows,
             )
-
-        pl = _require_polars()
-        df = pl.scan_parquet(parquet).slice((page - 1) * page_size, page_size).collect()
-        total_rows = int(pl.scan_parquet(parquet).select(pl.len()).collect()[0, 0])
-        rows: list[ImportPreviewRow] = []
-        for r in df.to_dicts():
-            row_number = int(r.get("row_number") or 0)
-            data = {k: v for k, v in r.items() if k != "row_number"}
-            rows.append(ImportPreviewRow(row_number=row_number, data=data))
-
-        return ImportPreviewResponse(
-            import_id=import_id,
-            checksum=checksum,
-            page=page,
-            page_size=page_size,
-            total_rows=total_rows,
-            rows=rows,
-        )
+            await self._emit_event(
+                "preview.completed",
+                import_id=str(import_id),
+                page=page,
+                page_size=page_size,
+                kind=kind,
+                total_rows=resp.total_rows,
+                rows_count=len(resp.rows),
+            )
+            return resp
+        except Exception as exc:
+            await self._emit_event(
+                "preview.failed",
+                import_id=str(import_id),
+                page=page,
+                page_size=page_size,
+                kind=kind,
+                error=str(exc),
+            )
+            raise
 
     async def commit(
         self,
@@ -596,6 +685,12 @@ class ImportExportService:
                 existing validation errors, lock failure, or DB integrity error.
                 checksum 为空/不匹配、import_id 不存在、状态非法、存在校验错误、锁获取失败或数据库完整性错误时抛出。
         """
+        await self._emit_event(
+            "commit.started",
+            import_id=str(body.import_id),
+            overwrite_mode=(str(body.overwrite_mode) if body.overwrite_mode is not None else None),
+            allow_overwrite=bool(body.allow_overwrite),
+        )
         paths = get_import_paths(body.import_id, config=self.config)
         if not str(body.checksum).strip():
             raise ImportExportError(message="checksum cannot be empty / checksum 不能为空")
@@ -611,13 +706,21 @@ class ImportExportService:
 
         if meta.get("status") == "committed":
             committed_at = int(meta.get("committed_at") or now_ts())
-            return ImportCommitResponse(
+            resp = ImportCommitResponse(
                 import_id=body.import_id,
                 checksum=body.checksum,
                 status="committed",
                 imported_rows=int(meta.get("imported_rows") or 0),
                 created_at=datetime.fromtimestamp(committed_at, tz=UTC),
             )
+            await self._emit_event(
+                "commit.completed",
+                import_id=str(body.import_id),
+                status=resp.status,
+                imported_rows=resp.imported_rows,
+                idempotent=True,
+            )
+            return resp
 
         if paths.errors_json.exists():
             errors = json.loads(paths.errors_json.read_text(encoding="utf-8"))
@@ -642,6 +745,11 @@ class ImportExportService:
             result = await _maybe_await(self.redis_client.set(lock_key, lock_value, ex=self.lock_ttl_seconds, nx=True))
             lock_acquired = bool(result)
             if not lock_acquired:
+                await self._emit_event(
+                    "commit.failed",
+                    import_id=str(body.import_id),
+                    error="lock_not_acquired",
+                )
                 raise ImportExportError(
                     message="Import in progress, retry later / 导入正在执行，请稍后重试",
                     status_code=409,
@@ -669,18 +777,32 @@ class ImportExportService:
             meta["imported_rows"] = imported_rows
             meta["overwrite_mode"] = str(resolved_mode)
             write_meta(paths, meta)
-            return ImportCommitResponse(
+            resp = ImportCommitResponse(
                 import_id=body.import_id,
                 checksum=body.checksum,
                 status="committed",
                 imported_rows=imported_rows,
                 created_at=datetime.fromtimestamp(int(meta.get("committed_at") or now_ts()), tz=UTC),
             )
+            await self._emit_event(
+                "commit.completed",
+                import_id=str(body.import_id),
+                status=resp.status,
+                imported_rows=resp.imported_rows,
+                overwrite_mode=str(resolved_mode),
+                idempotent=False,
+            )
+            return resp
         except Exception as exc:
             meta["status"] = "commit_failed"
             meta["commit_failed_at"] = now_ts()
             meta["commit_error"] = str(exc)
             write_meta(paths, meta)
+            await self._emit_event(
+                "commit.failed",
+                import_id=str(body.import_id),
+                error=str(exc),
+            )
 
             # ORM-agnostic: use duck-typing to extract constraint details / 与 ORM 无关：使用鸭子类型从任何 ORM 中提取约束详情
             # from any ORM (e.g. SQLAlchemy .orig, Tortoise, raw driver, etc.). / 例如 SQLAlchemy .orig、Tortoise、原生驱动等。

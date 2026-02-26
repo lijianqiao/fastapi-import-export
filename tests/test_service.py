@@ -15,9 +15,9 @@ import polars as pl
 import pytest
 
 from fastapi_import_export.config import ImportExportConfig
+from fastapi_import_export.constraint_parser import find_conflict_row_numbers, parse_unique_constraint_error
 from fastapi_import_export.exceptions import ImportExportError
 from fastapi_import_export.schemas import ImportCommitRequest
-from fastapi_import_export.constraint_parser import find_conflict_row_numbers, parse_unique_constraint_error
 from fastapi_import_export.service import (
     ExportResult,
     ImportExportService,
@@ -515,6 +515,7 @@ class TestRedisLock:
         resp = await svc.commit(body=body, persist_fn=_dummy_persist)
         assert resp.status == "committed"
 
+
 class TestExportTableValidation:
     @pytest.mark.asyncio
     async def test_export_rejects_unsupported_format(self, svc: ImportExportService) -> None:
@@ -524,3 +525,53 @@ class TestExportTableValidation:
         with pytest.raises(ImportExportError) as exc_info:
             await svc.export_table(fmt="pdf", filename_prefix="users", df_fn=df_fn)
         assert exc_info.value.error_code == "unsupported_export_format"
+
+
+class TestObservabilityHook:
+    """Tests for optional event_hook observability integration.
+    可选 event_hook 可观测性集成测试。
+    """
+
+    @pytest.mark.asyncio
+    async def test_emit_events_for_validate_preview_commit(self, tmp_config: ImportExportConfig, mock_db: Any) -> None:
+        """Service emits structured lifecycle events / 服务发送结构化生命周期事件。"""
+        ensure_dirs(config=tmp_config)
+        events: list[dict[str, Any]] = []
+
+        async def event_hook(event: dict[str, Any]) -> None:
+            events.append(event)
+
+        svc = ImportExportService(db=mock_db, config=tmp_config, event_hook=event_hook)
+        file = make_upload_file("test.csv", _csv_bytes())
+
+        validate_resp = await svc.upload_parse_validate(file=file, column_aliases={}, validate_fn=_dummy_validate)
+        await svc.preview(
+            import_id=validate_resp.import_id,
+            checksum=validate_resp.checksum,
+            page=1,
+            page_size=50,
+            kind="all",
+        )
+        body = ImportCommitRequest(import_id=validate_resp.import_id, checksum=validate_resp.checksum)
+        await svc.commit(body=body, persist_fn=_dummy_persist)
+
+        names = [str(e.get("name")) for e in events]
+        assert "upload_parse_validate.started" in names
+        assert "upload_parse_validate.completed" in names
+        assert "preview.started" in names
+        assert "preview.completed" in names
+        assert "commit.started" in names
+        assert "commit.completed" in names
+
+    @pytest.mark.asyncio
+    async def test_event_hook_error_is_swallowed(self, tmp_config: ImportExportConfig, mock_db: Any) -> None:
+        """Hook errors must not break business flow / Hook 异常不应影响业务流程。"""
+        ensure_dirs(config=tmp_config)
+
+        async def bad_hook(event: dict[str, Any]) -> None:
+            raise RuntimeError(f"hook error: {event.get('name')}")
+
+        svc = ImportExportService(db=mock_db, config=tmp_config, event_hook=bad_hook)
+        file = make_upload_file("test.csv", _csv_bytes())
+        validate_resp = await svc.upload_parse_validate(file=file, column_aliases={}, validate_fn=_dummy_validate)
+        assert validate_resp.total_rows == 3

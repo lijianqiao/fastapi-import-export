@@ -53,6 +53,23 @@ class RedisLike(Protocol):
         ...
 
 
+class ServiceEventHook(Protocol):
+    """Optional service event hook for observability.
+
+    服务可观测性事件 Hook（可选）。
+
+    The hook receives a structured event payload. It may be sync or async.
+    Hook 接收结构化事件载荷，可为同步或异步函数。
+    """
+
+    def __call__(self, event: dict[str, Any]) -> Any:
+        """Handle a service event payload.
+
+        处理服务事件载荷。
+        """
+        ...
+
+
 ExportDfFn = Callable[[Any], Awaitable[TableData]]
 BuildTemplateFn = Callable[[Path], None]
 

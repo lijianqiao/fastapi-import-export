@@ -12,3 +12,7 @@ wheels/
 .coverage
 instructions
 docs
+
+# Benchmark artifacts / 基准产物
+.perf/*
+!.perf/baseline.json

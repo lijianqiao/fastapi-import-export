@@ -7,21 +7,28 @@ description: FastAPI-first import/export toolkit with composable workflows and p
 
 ## Description
 
-This skill helps you build import and export workflows for FastAPI. It provides
-an easy-layer API for 5-minute success, an explicit configuration layer for
-common business needs, and an advanced hook-based layer for power users.
+This skill helps you build and operate import/export workflows for FastAPI.
+It now includes stable overwrite semantics, unified error codes,
+template contracts, observability events, and performance regression gating.
+
+本技能用于构建并运维 FastAPI 导入导出流程。
+当前能力已覆盖稳定覆盖策略、统一错误码、模板契约、可观测事件与性能门禁。
 
 ## Use Cases
 
 - One-call CSV/XLSX import and export (easy layer).
 - Explicit options for common business needs (options layer).
 - Full hook-based lifecycle when you need custom pipelines (advanced layer).
+- Structured error payloads for front-end consumption.
+- Baseline-based performance regression gating in CI.
 
 ## Core Concepts
 
 - Resource: Field mapping and resource schema.
 - Easy API: `export_*` / `import_*` top-level functions.
 - Options: `ExportOptions` / `ImportOptions` (explicit configuration).
+- Overwrite semantics: `reject` / `upsert` / `replace`.
+- Error code contract: `schema_error` / `type_error` / `db_conflict`.
 - Advanced API: Importer/Exporter/ImportExportService under `fastapi_import_export.advanced`.
 - Contrib ORM adapters: `fastapi_import_export.contrib.*` (requires `[sqlalchemy]` / `[sqlmodel]` / `[tortoise]`).
 - Facades: parse/storage/validation/db_validation pluggable backends.
@@ -34,6 +41,9 @@ common business needs, and an advanced hook-based layer for power users.
 - Streaming export payloads.
 - Defaults that reduce boilerplate (media_type, line endings, mapping).
 - Built-in codecs for common types (Enum/Date/Datetime/Decimal/Bool).
+- Service observability hook (`event_hook`) with lifecycle events.
+- Built-in template contract preset (`get_book_template_contract`).
+- Benchmark scaffold with seed/warmup/rounds and baseline comparison gate.
 
 ## API Inventory
 
@@ -56,6 +66,7 @@ common business needs, and an advanced hook-based layer for power users.
 - `ImportOptions`
 	- `db: Any | None`
 	- `allow_overwrite: bool` (default: False)
+	- `overwrite_mode: OverwriteMode | str | None`
 	- `unique_fields: list[str] | None`
 	- `db_checks: list[DbCheckSpec] | None`
 	- `allowed_extensions: Iterable[str] | None`
@@ -83,7 +94,8 @@ common business needs, and an advanced hook-based layer for power users.
 	- `render(*, data, fmt) -> ByteStream`
 	- `stream(*, resource, fmt, filename, media_type, params=None) -> ExportPayload`
 - `ImportExportService`
-	- `upload_parse_validate(*, file, column_aliases, validate_fn, allow_overwrite=False, unique_fields=None, db_checks=None, allowed_extensions=None, allowed_mime_types=None) -> ImportValidateResponse`
+	- `__init__(..., redis_client=None, event_hook=None, config=None, base_dir=None, max_upload_mb=20, lock_ttl_seconds=300)`
+	- `upload_parse_validate(*, file, column_aliases, validate_fn, allow_overwrite=False, overwrite_mode=None, unique_fields=None, db_checks=None, allowed_extensions=None, allowed_mime_types=None) -> ImportValidateResponse`
 	- `preview(*, import_id, checksum, page, page_size, kind) -> ImportPreviewResponse`
 	- `commit(*, body, persist_fn, lock_namespace="import") -> ImportCommitResponse`
 
@@ -100,8 +112,15 @@ common business needs, and an advanced hook-based layer for power users.
 
 - `ImportExportError` with `message`, `status_code`, `details`, `error_code`
 - `ParseError` / `ValidationError` / `PersistError` / `ExportError`
+- `ImportErrorItem` includes `row_number`, `field`, `type`, `message`
 
-**ImportExportError error_code list (common)**
+**Unified validation error code contract**
+
+- `schema_error`: Contract/required/enum/in-file duplicate errors.
+- `type_error`: Parse/coercion/type conversion errors.
+- `db_conflict`: Database uniqueness/conflict errors.
+
+**ImportExportError common error_code values**
 
 - `missing_dependency`: Backend/adapter dependency is missing (bundled package removed or optional adapter not installed).
 - `unsupported_media_type`: File extension or MIME type is not allowed.
@@ -121,6 +140,7 @@ common business needs, and an advanced hook-based layer for power users.
 
 - `import_csv/import_xlsx` runs upload -> parse -> validate -> commit.
 - Requires `validate_fn` and `persist_fn` only.
+- Overwrite priority is stable: `overwrite_mode` > `allow_overwrite`.
 - On validation errors returns `ImportResult(status=VALIDATED, errors=...)`.
 - On success returns `ImportResult(status=COMMITTED, imported_rows=...)`.
 
@@ -139,7 +159,7 @@ common business needs, and an advanced hook-based layer for power users.
 **ImportExportService.upload_parse_validate**
 
 - Required: `file`, `column_aliases`, `validate_fn`
-- Optional: `allow_overwrite`, `unique_fields`, `db_checks`, `allowed_extensions`, `allowed_mime_types`
+- Optional: `allow_overwrite`, `overwrite_mode`, `unique_fields`, `db_checks`, `allowed_extensions`, `allowed_mime_types`
 - Returns: `ImportValidateResponse` with `import_id`, `checksum`, `total_rows`, `valid_rows`, `error_rows`, `errors`
 - Errors:
 	- 413 when upload exceeds `max_upload_mb`
@@ -165,6 +185,15 @@ common business needs, and an advanced hook-based layer for power users.
 	- 409 when Redis lock not acquired
 	- DB integrity errors are mapped to user-friendly messages
 
+**ImportExportService observability**
+
+- Optional constructor arg: `event_hook(event: dict) -> None | awaitable`
+- Emits lifecycle events:
+	- `upload_parse_validate.started/completed/failed`
+	- `preview.started/completed/failed`
+	- `commit.started/completed/failed`
+- Hook failures are swallowed by design and do not break business flow.
+
 ## Field-level Response Structures
 
 **ImportErrorItem**
@@ -173,6 +202,7 @@ common business needs, and an advanced hook-based layer for power users.
 {
 	"row_number": 12,
 	"field": "email",
+	"type": "schema_error",
 	"message": "Duplicate value for field email: a@b.com"
 }
 ```
@@ -201,6 +231,7 @@ common business needs, and an advanced hook-based layer for power users.
 - Codecs can be overridden per field with `field_codecs`.
 - When `Resource.model` is set and no fields are declared, fields are inferred from the ORM model.
 - Easy layer applies codecs before `validate_fn/persist_fn` and formats values during export.
+- Overwrite strategy can be set by `ImportOptions.overwrite_mode`.
 
 ## Codecs (Widget System)
 
@@ -282,6 +313,22 @@ async def persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
 
 
 result = await import_csv(file, resource=UserResource, validate_fn=validate_fn, persist_fn=persist_fn)
+```
+
+**0.2) Easy Import with overwrite mode**
+
+```python
+from fastapi_import_export import import_csv
+from fastapi_import_export.options import ImportOptions
+
+
+result = await import_csv(
+	file,
+	resource=UserResource,
+	validate_fn=validate_fn,
+	persist_fn=persist_fn,
+	options=ImportOptions(overwrite_mode="upsert"),
+)
 ```
 
 **1) Define Resource and Importer**
@@ -396,6 +443,39 @@ svc = ImportExportService(db=object(), config=cfg)
 - `fastapi_import_export.advanced.ImportExportService` for upload/preview/commit workflows.
 - Facades: `parse`, `validation`, `db_validation`, `storage` to plug backends.
 
+## Built-in Template Contracts
+
+- `get_book_template_contract()` returns a built-in book import contract.
+- Exports include:
+	- `BOOK_TEMPLATE_COLUMNS`
+	- `BOOK_STATUS_ENUM`
+
+Use these presets to keep header/value contracts stable across front-end, ops, and backend teams.
+
+## Performance Benchmark & CI Gate
+
+Benchmark script:
+
+- `benchmarks/benchmark_import_service.py`
+
+Key options:
+
+- `--kind csv|xlsx`
+- `--rows <int>`
+- `--seed <int>`
+- `--warmup <int>`
+- `--rounds <int>`
+- `--export-json <path>`
+- `--baseline-json <path>`
+- `--regression-threshold <float>`
+- `--fail-on-regression`
+
+CI workflow:
+
+- `.github/workflows/performance-gate.yml`
+- Uses `.perf/baseline.json` as baseline.
+- Fails PR when regression exceeds threshold.
+
 ### Custom Serializer/Renderer
 
 - **Serializer**: implement a function that turns table-like data into bytes.
@@ -433,3 +513,4 @@ svc = ImportExportService(db=object(), config=cfg)
 - Does not manage database connections.
 - Does not own ORM, only adapts.
 - Does not handle authentication or authorization.
+- Benchmark gate is best-effort on shared runners; set thresholds with noise margin.

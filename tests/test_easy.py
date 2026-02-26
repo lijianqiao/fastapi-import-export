@@ -17,7 +17,7 @@ import pytest
 from fastapi_import_export import export_csv, export_xlsx, import_csv
 from fastapi_import_export.codecs import DateCodec, DecimalCodec, EnumCodec
 from fastapi_import_export.importer import ImportStatus
-from fastapi_import_export.options import ExportOptions
+from fastapi_import_export.options import ExportOptions, ImportOptions
 from fastapi_import_export.resource import Resource
 from fastapi_import_export.serializers import CsvSerializer
 from tests.conftest import make_upload_file
@@ -117,6 +117,20 @@ def test_serializer_csv_default_no_bom() -> None:
     assert not data.startswith(b"\xef\xbb\xbf")
 
 
+@pytest.mark.parametrize(
+    ("include_bom", "expected_prefix"),
+    [
+        (False, False),
+        (True, True),
+    ],
+)
+def test_serializer_csv_include_bom_matrix(include_bom: bool, expected_prefix: bool) -> None:
+    """CSV BOM matrix for serializer options / CSV BOM 序列化选项矩阵测试。"""
+    rows = [{"a": 1}]
+    data = CsvSerializer().serialize(data=rows, options=ExportOptions(include_bom=include_bom))
+    assert data.startswith(b"\xef\xbb\xbf") is expected_prefix
+
+
 @pytest.mark.asyncio
 async def test_easy_import_csv_applies_codecs() -> None:
     csv = "title,status,published_at,price\nBook,可借阅,2010-01-01,139.00\n"
@@ -164,3 +178,39 @@ async def test_easy_export_object_rows() -> None:
     assert b"title" in data
     assert b"price" in data
     assert b"A" in data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("overwrite_mode", "expected_allow_overwrite"),
+    [
+        ("reject", False),
+        ("upsert", True),
+        ("replace", True),
+    ],
+)
+async def test_easy_import_overwrite_mode_matrix(overwrite_mode: str, expected_allow_overwrite: bool) -> None:
+    """overwrite_mode matrix should propagate to handlers / overwrite_mode 矩阵应透传到业务处理器。"""
+    csv = "username,email\nalice,alice@b.com\n"
+    file = make_upload_file("test.csv", csv.encode())
+    captured_validate_flags: list[bool] = []
+    captured_persist_flags: list[bool] = []
+
+    async def validate_fn(db, df, *, allow_overwrite: bool = False):
+        captured_validate_flags.append(bool(allow_overwrite))
+        return df, []
+
+    async def persist_fn(db, valid_df, *, allow_overwrite: bool = False) -> int:
+        captured_persist_flags.append(bool(allow_overwrite))
+        return int(valid_df.height)
+
+    result = await import_csv(
+        file,
+        resource=UserResource,
+        validate_fn=validate_fn,
+        persist_fn=persist_fn,
+        options=ImportOptions(overwrite_mode=overwrite_mode),
+    )
+    assert result.status == ImportStatus.COMMITTED
+    assert captured_validate_flags == [expected_allow_overwrite]
+    assert captured_persist_flags == [expected_allow_overwrite]

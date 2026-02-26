@@ -1,0 +1,51 @@
+name: Performance Gate
+
+on:
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    perf-gate:
+        name: Perf Regression Gate (Python 3.12)
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v4
+
+            - name: Set up Python 3.12
+              run: uv python install 3.12
+
+            - name: Install dependencies
+              run: uv sync --group dev --all-extras
+
+            - name: Ensure baseline exists
+              run: |
+                  test -f .perf/baseline.json || (echo "Missing .perf/baseline.json / 缺少 .perf/baseline.json" && exit 1)
+
+            - name: Run performance gate
+              run: |
+                  uv run python benchmarks/benchmark_import_service.py \
+                    --kind csv \
+                    --rows 5000 \
+                    --seed 42 \
+                    --warmup 1 \
+                    --rounds 5 \
+                    --baseline-json .perf/baseline.json \
+                    --regression-threshold 0.30 \
+                    --fail-on-regression \
+                    --export-json .perf/latest-ci.json \
+                    --json
+
+            - name: Upload benchmark artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: perf-latest-ci
+                  path: .perf/latest-ci.json
+                  if-no-files-found: ignore
