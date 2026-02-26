@@ -9,7 +9,10 @@ validation_extras.py 模块测试。
 
 from typing import Any
 
-from fastapi_import_export.validation_extras import RowValidator
+import polars as pl
+
+from fastapi_import_export.error_codes import SCHEMA_ERROR
+from fastapi_import_export.validation_extras import RowValidator, coerce_polars_types, drop_internal_columns
 
 
 def _make_validator(row: dict[str, Any], row_number: int = 1) -> tuple[RowValidator, list[dict]]:
@@ -30,7 +33,7 @@ class TestNotBlank:
         rv, errors = _make_validator({"name": ""})
         rv.not_blank("name", "required")
         assert len(errors) == 1
-        assert errors[0]["type"] == "required"
+        assert errors[0]["type"] == SCHEMA_ERROR
 
     def test_non_blank_no_error(self) -> None:
         rv, errors = _make_validator({"name": "alice"})
@@ -62,7 +65,7 @@ class TestIpAddress:
         rv, errors = _make_validator({"ip": "999.999.999.999"})
         rv.ip_address("ip", "invalid ip")
         assert len(errors) == 1
-        assert errors[0]["type"] == "format"
+        assert errors[0]["type"] == SCHEMA_ERROR
 
     def test_empty_skips(self) -> None:
         rv, errors = _make_validator({"ip": ""})
@@ -84,7 +87,7 @@ class TestOneOf:
         rv, errors = _make_validator({"status": "unknown"})
         rv.one_of("status", {"active", "inactive"}, "invalid status")
         assert len(errors) == 1
-        assert errors[0]["type"] == "enum"
+        assert errors[0]["type"] == SCHEMA_ERROR
 
     def test_empty_skips(self) -> None:
         rv, errors = _make_validator({"status": ""})
@@ -106,7 +109,7 @@ class TestRegex:
         rv, errors = _make_validator({"code": "abc"})
         rv.regex("code", r"[A-Z]{3}\d{3}", "invalid code")
         assert len(errors) == 1
-        assert errors[0]["type"] == "format"
+        assert errors[0]["type"] == SCHEMA_ERROR
 
     def test_empty_skips(self) -> None:
         rv, errors = _make_validator({"code": ""})
@@ -194,3 +197,66 @@ class TestDbUniqueConflict:
             deleted_message="deleted",
         )
         assert len(errors) == 0
+
+
+class TestCoercePolarsTypes:
+    """Tests for coerce_polars_types.
+    coerce_polars_types 测试。
+    """
+
+    def test_successful_coercion(self) -> None:
+        df = pl.DataFrame(
+            {
+                "row_number": [1],
+                "price": ["12.50"],
+                "qty": ["3"],
+                "enabled": ["true"],
+                "published_at": ["2026-02-01"],
+            }
+        )
+        valid_df, errors = coerce_polars_types(
+            df,
+            type_rules={
+                "price": "decimal",
+                "qty": "int",
+                "enabled": "bool",
+                "published_at": "date",
+            },
+        )
+        assert len(errors) == 0
+        assert valid_df.height == 1
+
+    def test_type_error_is_front_loaded(self) -> None:
+        df = pl.DataFrame(
+            {
+                "row_number": [1, 2],
+                "qty": ["abc", "10"],
+            }
+        )
+        valid_df, errors = coerce_polars_types(df, type_rules={"qty": "int"})
+        assert valid_df.height == 1
+        assert len(errors) == 1
+        assert errors[0]["type"] == "type_error"
+        assert errors[0]["row_number"] == 1
+
+    def test_enum_alias_mapping(self) -> None:
+        df = pl.DataFrame({"row_number": [1], "status": ["可借阅"]})
+        valid_df, errors = coerce_polars_types(
+            df,
+            type_rules={"status": "enum"},
+            enum_aliases={"status": {"可借阅": "available"}},
+        )
+        assert len(errors) == 0
+        assert valid_df.to_dicts()[0]["status"] == "available"
+
+
+class TestDropInternalColumns:
+    """Tests for drop_internal_columns.
+    drop_internal_columns 测试。
+    """
+
+    def test_drop_row_number(self) -> None:
+        df = pl.DataFrame({"row_number": [1], "name": ["alice"]})
+        cleaned = drop_internal_columns(df)
+        assert "row_number" not in cleaned.columns
+        assert cleaned.columns == ["name"]

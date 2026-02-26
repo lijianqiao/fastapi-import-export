@@ -9,6 +9,7 @@ Tortoise ORM 适配层测试。
 
 import pytest
 
+from fastapi_import_export.error_codes import DB_CONFLICT
 from fastapi_import_export.importer import ImportStatus
 from tests.conftest import make_upload_file
 
@@ -43,5 +44,24 @@ async def test_contrib_tortoise_import_export() -> None:
         data = b"".join([chunk async for chunk in payload.stream])
         assert b"title" in data
         assert b"333" in data
+    finally:
+        await Tortoise.close_connections()
+
+
+@pytest.mark.asyncio
+async def test_contrib_tortoise_duplicate_conflict_error_code() -> None:
+    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": [__name__]})
+    await Tortoise.generate_schemas()
+
+    try:
+        file1 = make_upload_file("books.csv", b"title,isbn\nA,111\n")
+        result1 = await import_model_csv(file1, model=Book, unique_fields=["isbn"])
+        assert result1.status == ImportStatus.COMMITTED
+
+        file2 = make_upload_file("books.csv", b"title,isbn\nB,111\n")
+        result2 = await import_model_csv(file2, model=Book, unique_fields=["isbn"])
+        assert result2.status == ImportStatus.VALIDATED
+        assert result2.errors
+        assert result2.errors[0].type == DB_CONFLICT
     finally:
         await Tortoise.close_connections()

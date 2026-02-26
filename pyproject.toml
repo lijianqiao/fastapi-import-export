@@ -11,7 +11,7 @@ requires-python = ">=3.12,<3.15"
 license = "MIT"
 authors = [{ name = "lijianqiao", email = "lijianqiao2906@live.com" }]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: FastAPI",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
@@ -35,6 +35,7 @@ dependencies = [
 Homepage = "https://github.com/lijianqiao/fastapi-import-export"
 Source = "https://github.com/lijianqiao/fastapi-import-export"
 Issues = "https://github.com/lijianqiao/fastapi-import-export/issues"
+Changelog = "https://github.com/lijianqiao/fastapi-import-export/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 polars = ["polars>=1.38.1"]
@@ -50,7 +51,7 @@ full = [
     "xlsxwriter>=3.2.9",
     "uuid6>=2025.0.1",
     "sqlalchemy[asyncio]>=2.0.46",
-    "sqlmodel>=0.0.24",
+    "sqlmodel>=0.0.32",
     "tortoise-orm>=0.25.0",
 ]
 
@@ -94,6 +95,6 @@ e2e = [
     "python-multipart>=0.0.20",
     "aiosqlite>=0.21.0",
     "sqlalchemy[asyncio]>=2.0.46",
-    "sqlmodel>=0.0.24",
+    "sqlmodel>=0.0.32",
     "tortoise-orm>=0.25.0",
 ]

@@ -47,7 +47,9 @@ from fastapi import UploadFile
 from fastapi_import_export.config import ImportExportConfig, resolve_config
 from fastapi_import_export.constraint_parser import is_unique_constraint_error, raise_unique_conflict
 from fastapi_import_export.db_validation import DbCheckSpec, run_db_checks
+from fastapi_import_export.error_codes import normalize_error_item
 from fastapi_import_export.exceptions import ImportExportError
+from fastapi_import_export.overwrite import resolve_overwrite_mode
 from fastapi_import_export.parse import normalize_columns, parse_tabular_file
 from fastapi_import_export.schemas import (
     ImportCommitRequest,
@@ -227,12 +229,20 @@ class ImportExportService:
             ...     return pl.DataFrame([{"a": 1}])
             >>> # await svc.export_table(fmt="csv", filename_prefix="items", df_fn=df_fn)
         """
+        fmt_normalized = str(fmt).strip().lower()
+        if fmt_normalized not in {"csv", "xlsx"}:
+            raise ImportExportError(
+                message=f"Unsupported export format: {fmt} / 不支持的导出格式: {fmt}",
+                status_code=400,
+                error_code="unsupported_export_format",
+            )
+
         df = await df_fn(self.db)
         ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
-        filename = f"{filename_prefix}_{ts}.{fmt}"
+        filename = f"{filename_prefix}_{ts}.{fmt_normalized}"
         file_path = create_export_path(filename, config=self.config)
 
-        if fmt == "csv":
+        if fmt_normalized == "csv":
             df.write_csv(file_path, include_bom=True, line_terminator="\r\n")
             return ExportResult(path=file_path, filename=filename, media_type="text/csv; charset=utf-8")
 
@@ -294,6 +304,7 @@ class ImportExportService:
         column_aliases: dict[str, str],
         validate_fn: ServiceValidateFn,
         allow_overwrite: bool = False,
+        overwrite_mode: str | None = None,
         unique_fields: list[str] | None = None,
         db_checks: list[DbCheckSpec] | None = None,
         allowed_extensions: Iterable[str] | None = None,
@@ -324,6 +335,8 @@ class ImportExportService:
                 业务校验 handler。
             allow_overwrite: Pass-through overwrite flag for domain logic.
                 覆盖标志（透传给业务校验逻辑）。
+            overwrite_mode: Explicit overwrite mode: reject/upsert/replace.
+                显式覆盖模式：reject/upsert/replace。
             unique_fields: Unique fields to check within file.
                 文件内唯一性检查字段列表。
             db_checks: Optional database check specs.
@@ -394,6 +407,11 @@ class ImportExportService:
                 "created_at": now_ts(),
                 "status": "uploaded",
             }
+            resolved_allow_overwrite, resolved_mode = resolve_overwrite_mode(
+                allow_overwrite=allow_overwrite,
+                overwrite_mode=overwrite_mode,
+            )
+            meta["overwrite_mode"] = str(resolved_mode)
             write_meta(paths, meta)
 
             pl = _require_polars()
@@ -402,16 +420,24 @@ class ImportExportService:
             df.write_parquet(paths.parsed_parquet)
             parsed_ok = True
 
-            valid_df, errors = await validate_fn(self.db, df, allow_overwrite=allow_overwrite)
-            if db_checks:
-                errors.extend(await run_db_checks(db=self.db, df=df, specs=db_checks, allow_overwrite=allow_overwrite))
-            if unique_fields:
+            valid_df, errors = await validate_fn(self.db, df, allow_overwrite=resolved_allow_overwrite)
+            if db_checks and not valid_df.is_empty():
+                errors.extend(
+                    await run_db_checks(
+                        db=self.db,
+                        df=valid_df,
+                        specs=db_checks,
+                        allow_overwrite=resolved_allow_overwrite,
+                    )
+                )
+            if unique_fields and not df.is_empty():
                 errors.extend(collect_infile_duplicates(df, unique_fields))
                 extra_error_rows = {int(e.get("row_number") or 0) for e in errors if int(e.get("row_number") or 0) > 0}
                 if not valid_df.is_empty() and extra_error_rows:
                     if "row_number" in valid_df.columns:
                         valid_df = valid_df.filter(~pl.col("row_number").is_in(list(extra_error_rows)))
-            paths.errors_json.write_text(json.dumps(errors, ensure_ascii=False, indent=2), encoding="utf-8")
+            normalized_errors = [normalize_error_item(e) for e in errors]
+            paths.errors_json.write_text(json.dumps(normalized_errors, ensure_ascii=False, indent=2), encoding="utf-8")
             # Always write valid.parquet, even when empty, to keep commit semantics consistent. / 无论是否为空，都要写入 valid.parquet，以保持提交语义一致。
             # 始终写入 valid.parquet，即使为空，保证提交语义一致。
             valid_df.write_parquet(paths.valid_parquet)
@@ -421,14 +447,19 @@ class ImportExportService:
                 checksum=checksum,
                 total_rows=int(parsed.total_rows),
                 valid_rows=int(valid_df.height) if not valid_df.is_empty() else 0,
-                error_rows=len({e["row_number"] for e in errors if int(e.get("row_number") or 0) > 0}) if errors else 0,
+                error_rows=(
+                    len({e["row_number"] for e in normalized_errors if int(e.get("row_number") or 0) > 0})
+                    if normalized_errors
+                    else 0
+                ),
                 errors=[
                     ImportErrorItem(
                         row_number=int(e.get("row_number") or 0),
                         field=cast(str | None, e.get("field")),
+                        type=cast(str | None, e.get("type")),
                         message=str(e.get("message") or ""),
                     )
-                    for e in errors[:200]
+                    for e in normalized_errors[:200]
                 ],
             )
 
@@ -628,10 +659,15 @@ class ImportExportService:
                 pass
 
         try:
-            imported_rows = await persist_fn(self.db, valid_df, allow_overwrite=body.allow_overwrite)
+            resolved_allow_overwrite, resolved_mode = resolve_overwrite_mode(
+                allow_overwrite=body.allow_overwrite,
+                overwrite_mode=body.overwrite_mode,
+            )
+            imported_rows = await persist_fn(self.db, valid_df, allow_overwrite=resolved_allow_overwrite)
             meta["status"] = "committed"
             meta["committed_at"] = now_ts()
             meta["imported_rows"] = imported_rows
+            meta["overwrite_mode"] = str(resolved_mode)
             write_meta(paths, meta)
             return ImportCommitResponse(
                 import_id=body.import_id,

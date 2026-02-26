@@ -20,6 +20,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from fastapi_import_export.overwrite import OverwriteMode
+
 
 class ImportErrorItem(BaseModel):
     """Single validation error item.
@@ -39,6 +41,7 @@ class ImportErrorItem(BaseModel):
         ..., description="Source row number (1-based, excluding header) / 源文件行号（从 1 开始，不含表头）"
     )
     field: str | None = Field(default=None, description="Field name (optional) / 字段名（可选）")
+    type: str | None = Field(default=None, description="Error type/code (optional) / 错误类型（可选）")
     message: str = Field(..., description="Error reason / 错误原因")
 
 
@@ -133,6 +136,7 @@ class ImportCommitRequest(BaseModel):
     import_id: UUID
     checksum: str
     allow_overwrite: bool = False
+    overwrite_mode: OverwriteMode | str | None = None
 
 
 class ImportCommitResponse(BaseModel):

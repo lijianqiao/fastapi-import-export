@@ -24,7 +24,7 @@ def _load_backend() -> Any:
         from fastapi_import_export import parse_polars
 
         return parse_polars
-    except Exception as exc:  # pragma: no cover / 覆盖忽略
+    except (ImportError, ModuleNotFoundError) as exc:  # pragma: no cover / 覆盖忽略
         raise ImportExportError(
             message="Missing optional dependencies for parsing. Install extras: polars,xlsx / 缺少解析可选依赖，请安装: polars,xlsx",
             details={"error": str(exc)},
@@ -96,3 +96,4 @@ else:
         ParsedTable placeholder when optional backend is missing.
         可选后端缺失时的 ParsedTable 占位类型。
         """
+

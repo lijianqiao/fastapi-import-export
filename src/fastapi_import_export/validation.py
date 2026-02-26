@@ -30,7 +30,7 @@ def _load_backend() -> Any:
         from fastapi_import_export import validation_polars
 
         return validation_polars
-    except Exception as exc:  # pragma: no cover / 覆盖忽略
+    except (ImportError, ModuleNotFoundError) as exc:  # pragma: no cover / 覆盖忽略
         raise ImportExportError(
             message="Missing optional dependencies for validation. Install extras: polars / 缺少校验可选依赖，请安装: polars",
             details={"error": str(exc)},
@@ -57,7 +57,7 @@ def collect_infile_duplicates(df: Any, unique_fields: Iterable[str]) -> list[dic
     return backend.collect_infile_duplicates(df, unique_fields)
 
 
-def build_conflict_errors(df: Any, field: str, conflict_values: Iterable[str], *, reason: str) -> list[dict[str, Any]]:
+def build_conflict_errors(df: Any, field: str, conflict_values: Iterable[object], *, reason: str) -> list[dict[str, Any]]:
     """
     Build conflict error list.
     构建冲突错误列表。
@@ -78,3 +78,4 @@ def build_conflict_errors(df: Any, field: str, conflict_values: Iterable[str], *
     """
     backend = _load_backend()
     return backend.build_conflict_errors(df, field, conflict_values, reason=reason)
+

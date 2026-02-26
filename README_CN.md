@@ -1,4 +1,4 @@
-# fastapi_import_export
+﻿# fastapi_import_export
 
 FastAPI 优先的导入导出工具库，保持业务模型解耦。
 
@@ -9,7 +9,7 @@ FastAPI 优先的导入导出工具库，保持业务模型解耦。
 - 异步优先的导入/导出生命周期钩子。
 - 显式 Resource 映射，避免 ORM 强耦合。
 - 可插拔后端：解析/存储/校验按需启用。
-- 导出支持流式输出，适配大数据集。
+- 导出支持分块流式响应（先序列化，再分块发送）。
 
 ## 环境要求
 
@@ -273,7 +273,7 @@ async def persist_fn(*, data, resource, allow_overwrite=False):
     return 100
 ```
 
-## 大文件导出（流式）
+## 大文件导出（分块响应）
 
 ```python
 from fastapi import StreamingResponse
@@ -376,6 +376,92 @@ svc = ImportExportService(db=object(), config=cfg)
 export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
 export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ```
+
+## 覆盖策略（P0 建议）
+
+库已支持“显式覆盖策略”语义，同时保持 `allow_overwrite` 向后兼容：
+
+- `reject`：遇到冲突即拒绝（等价 `allow_overwrite=False`）
+- `upsert`：按唯一键更新已存在 + 插入新数据（`allow_overwrite=True` 的默认语义）
+- `replace`：按你的业务定义执行替换
+
+```python
+from fastapi_import_export import ImportOptions
+
+
+opts = ImportOptions(
+    overwrite_mode="upsert",  # reject | upsert | replace
+)
+```
+
+服务提交流程可直接使用：
+
+```python
+from fastapi_import_export.schemas import ImportCommitRequest
+
+
+body = ImportCommitRequest(
+    import_id=import_id,
+    checksum=checksum,
+    overwrite_mode="upsert",
+)
+```
+
+## 在 `validate` 阶段前置类型校验（P0 建议）
+
+为避免类型转换错误在 commit 阶段才触发 `500`，建议在 `validate_fn` 中使用
+`coerce_polars_types`：
+
+```python
+from fastapi_import_export.validation_extras import coerce_polars_types
+
+
+typed_df, type_errors = coerce_polars_types(
+    df,
+    type_rules={
+        "price": "decimal",
+        "stock": "int",
+        "published_at": "date",
+        "status": "enum",
+    },
+    enum_aliases={"status": {"可借阅": "available", "不可借阅": "unavailable"}},
+)
+```
+
+类型错误会在 commit 前以 `type_error` 返回，并带行级明细。
+
+## 统一错误码字典
+
+建议业务侧统一使用以下三类错误码：
+
+| 错误码         | 含义                          | 典型来源 |
+| -------------- | ----------------------------- | -------- |
+| `schema_error` | 模板结构/必填/枚举/重复值错误 | validate |
+| `type_error`   | 类型解析与转换错误            | validate |
+| `db_conflict`  | 数据库唯一约束或冲突错误      | commit   |
+
+库内可直接使用 `ERROR_CODE_DICT` 与 `normalize_error_item` 进行统一映射。
+
+## 图书场景模板契约（推荐）
+
+内置图书模板契约可通过 `get_book_template_contract()` 获取；推荐列如下：
+
+| 列名          | 字段           | 必填 | 示例                |
+| ------------- | -------------- | ---- | ------------------- |
+| `ISBN`        | `isbn`         | 是   | `9787302511854`     |
+| `Title`       | `title`        | 是   | `FastAPI in Action` |
+| `Author`      | `author`       | 是   | `Li Ming`           |
+| `Status`      | `status`       | 是   | `可借阅`            |
+| `PublishedAt` | `published_at` | 否   | `2026-01-01`        |
+| `Price`       | `price`        | 否   | `79.00`             |
+| `Stock`       | `stock`        | 否   | `10`                |
+
+状态枚举映射（中文别名）：
+
+- `可借阅` -> `available`
+- `不可借阅` -> `unavailable`
+
+可直接参考示例模板文件：[examples/fixtures/books_template.csv](examples/fixtures/books_template.csv)
 
 ## 唯一约束冲突检测
 
@@ -513,6 +599,30 @@ async def import_commit(body: ImportCommitRequest):
 - **checksum 不匹配**：确保客户端使用 `upload_parse_validate` 返回的 checksum。
 - **missing_dependency**：重新安装内置依赖或安装所需适配器/驱动。
 - **db_conflict**：检查唯一约束与软删除记录是否导致冲突。
+
+## 生产环境清理（建议）
+
+`ImportExportService` 会在 imports 工作目录保存中间文件（例如
+`parsed.parquet`、`valid.parquet`、`errors.json`）。
+生产环境建议配置定时清理，删除过期导入产物。
+
+```python
+from fastapi_import_export.storage import cleanup_expired_imports
+
+
+# 示例：每小时执行一次，保留最近 24 小时
+removed = cleanup_expired_imports(ttl_hours=24)
+print(f"removed import workspaces: {removed}")
+```
+
+可按运维方案接入 cron / Windows 任务计划 / Celery beat。
+
+## 发布与兼容策略
+
+- 当前项目成熟度：**Beta**。
+- 在小版本内尽量保持 README/文档公开 API 的向后兼容。
+- 破坏性变更仅在主版本引入，并在 release notes 中明确说明。
+- 版本变化与升级说明见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 测试
 

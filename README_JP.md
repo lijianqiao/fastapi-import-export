@@ -9,7 +9,7 @@ FastAPI を優先したインポート/エクスポート用ユーティリテ�
 - インポート/エクスポートのライフサイクルフックは非同期優先。
 - Resource を明示的にマッピングし、ORM との強い結合を回避。
 - 解析/保存/検証は必要に応じて切り替え可能なプラガブルバックエンド。
-- 大規模データに対応したストリーミング出力。
+- 非同期バイトストリームによるチャンク分割レスポンスでエクスポート。
 
 ## 動作環境
 
@@ -273,7 +273,7 @@ async def persist_fn(*, data, resource, allow_overwrite=False):
     return 100
 ```
 
-## 大規模エクスポート（ストリーミング）
+## 大規模エクスポート（チャンク分割レスポンス）
 
 ```python
 from fastapi import StreamingResponse
@@ -377,6 +377,93 @@ svc = ImportExportService(db=object(), config=cfg)
 export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
 export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ```
+
+## 上書き戦略（P0 推奨）
+
+`allow_overwrite` 互換を維持しつつ、明示的な上書き戦略を指定できます：
+
+- `reject`: 競合を拒否（`allow_overwrite=False` 相当）
+- `upsert`: 一意キーで更新 + 新規行を挿入（`allow_overwrite=True` の既定）
+- `replace`: 業務定義に従って既存行を置換
+
+```python
+from fastapi_import_export import ImportOptions
+
+
+opts = ImportOptions(
+    overwrite_mode="upsert",  # reject | upsert | replace
+)
+```
+
+サービスの commit リクエストでも指定できます：
+
+```python
+from fastapi_import_export.schemas import ImportCommitRequest
+
+
+body = ImportCommitRequest(
+    import_id=import_id,
+    checksum=checksum,
+    overwrite_mode="upsert",
+)
+```
+
+## `validate` 段階での型検証前倒し（P0 推奨）
+
+commit 時の型変換失敗による `500` を避けるため、`validate_fn` 内で
+`coerce_polars_types` を使って型検証を前倒しできます：
+
+```python
+from fastapi_import_export.validation_extras import coerce_polars_types
+
+
+typed_df, type_errors = coerce_polars_types(
+    df,
+    type_rules={
+        "price": "decimal",
+        "stock": "int",
+        "published_at": "date",
+        "status": "enum",
+    },
+    enum_aliases={"status": {"可借阅": "available", "不可借阅": "unavailable"}},
+)
+```
+
+型エラーは commit 前に `type_error` として行単位で返されます。
+
+## 統一エラーコード辞書
+
+業務レスポンス/ログでは次の 3 種類の安定コードを推奨します：
+
+| コード         | 意味                                  | 主な段階 |
+| -------------- | ------------------------------------- | -------- |
+| `schema_error` | 契約/必須/列挙/重複値などの検証エラー | validate |
+| `type_error`   | 型変換・型解析エラー                  | validate |
+| `db_conflict`  | DB 一意制約/競合エラー                | commit   |
+
+ライブラリは `ERROR_CODE_DICT` と `normalize_error_item` を提供します。
+
+## 図書テンプレート契約（推奨）
+
+組み込み契約は `get_book_template_contract()` で取得できます。
+推奨カラムは以下です：
+
+| 列名          | フィールド     | 必須   | 例                  |
+| ------------- | -------------- | ------ | ------------------- |
+| `ISBN`        | `isbn`         | はい   | `9787302511854`     |
+| `Title`       | `title`        | はい   | `FastAPI in Action` |
+| `Author`      | `author`       | はい   | `Li Ming`           |
+| `Status`      | `status`       | はい   | `可借阅`            |
+| `PublishedAt` | `published_at` | いいえ | `2026-01-01`        |
+| `Price`       | `price`        | いいえ | `79.00`             |
+| `Stock`       | `stock`        | いいえ | `10`                |
+
+ステータス別名マッピング：
+
+- `可借阅` -> `available`
+- `不可借阅` -> `unavailable`
+
+テンプレート例: [examples/fixtures/books_template.csv](examples/fixtures/books_template.csv)
 
 ## 一意制約の衝突検出
 
@@ -516,6 +603,30 @@ async def import_commit(body: ImportCommitRequest):
 - **checksum が一致しない**: `upload_parse_validate` が返した checksum をクライアントで使用してください。
 - **missing_dependency**: バンドル依存の復元、または必要なアダプタ/ドライバを追加してください。
 - **db_conflict**: 一意制約や論理削除レコードの影響を確認してください。
+
+## 本番運用でのクリーンアップ（推奨）
+
+`ImportExportService` は、設定した imports ワークスペース配下に
+中間ファイル（`parsed.parquet`、`valid.parquet`、`errors.json` など）を保存します。
+本番環境では、期限切れのインポート成果物を定期的に削除する運用を推奨します。
+
+```python
+from fastapi_import_export.storage import cleanup_expired_imports
+
+
+# 例: 1時間ごとに実行し、直近24時間分を保持
+removed = cleanup_expired_imports(ttl_hours=24)
+print(f"removed import workspaces: {removed}")
+```
+
+cron / Task Scheduler / Celery beat など、運用基盤に合わせて実行してください。
+
+## リリースと互換性ポリシー
+
+- 現在のプロジェクト成熟度: **Beta**。
+- README/ドキュメントで公開した API は、可能な限り minor バージョン内で後方互換を維持します。
+- 破壊的変更は major バージョンで導入し、リリースノートで明示します。
+- 変更履歴とアップグレード情報は [CHANGELOG.md](CHANGELOG.md) を参照してください。
 
 ## テスト
 

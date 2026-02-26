@@ -9,7 +9,7 @@ Other languages: [README_CN.md](README_CN.md) | [README_JP.md](README_JP.md)
 - Async-first lifecycle hooks for import and export.
 - Explicit Resource mapping to avoid ORM coupling.
 - Pluggable backends for parsing, storage, and validation.
-- Streaming export payloads for large datasets.
+- Chunked export response payloads via async byte streams.
 
 ## Requirements
 
@@ -274,7 +274,7 @@ async def persist_fn(*, data, resource, allow_overwrite=False):
     return 100
 ```
 
-## Large Export (Streaming)
+## Large Export (Chunked Response)
 
 ```python
 from fastapi import StreamingResponse
@@ -379,6 +379,94 @@ Environment variable example:
 export IMPORT_EXPORT_ALLOWED_EXTENSIONS=".csv,.xlsx"
 export IMPORT_EXPORT_ALLOWED_MIME_TYPES="text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ```
+
+## Overwrite Strategy (P0 Recommendation)
+
+The library now supports explicit overwrite mode semantics while keeping
+`allow_overwrite` backward compatible:
+
+- `reject`: reject conflicts (equivalent to `allow_overwrite=False`)
+- `upsert`: update existing by unique key + insert new (default when `allow_overwrite=True`)
+- `replace`: replace existing rows in your domain-defined way
+
+```python
+from fastapi_import_export import ImportOptions
+
+
+opts = ImportOptions(
+    overwrite_mode="upsert",  # reject | upsert | replace
+)
+```
+
+For service commit API:
+
+```python
+from fastapi_import_export.schemas import ImportCommitRequest
+
+
+body = ImportCommitRequest(
+    import_id=import_id,
+    checksum=checksum,
+    overwrite_mode="upsert",
+)
+```
+
+## Front-load Type Validation in `validate` (P0 Recommendation)
+
+To avoid `500` in commit caused by type conversion, use
+`coerce_polars_types` in your `validate_fn`:
+
+```python
+from fastapi_import_export.validation_extras import coerce_polars_types
+
+
+typed_df, type_errors = coerce_polars_types(
+    df,
+    type_rules={
+        "price": "decimal",
+        "stock": "int",
+        "published_at": "date",
+        "status": "enum",
+    },
+    enum_aliases={"status": {"可借阅": "available", "不可借阅": "unavailable"}},
+)
+```
+
+Type errors are returned as `type_error` with row-level details before commit.
+
+## Unified Error Code Dictionary
+
+Use these three stable error codes in business responses/logging:
+
+| Code           | Meaning                                     | Typical Stage |
+| -------------- | ------------------------------------------- | ------------- |
+| `schema_error` | Contract/required/enum/duplicate violations | validate      |
+| `type_error`   | Type parsing/conversion failures            | validate      |
+| `db_conflict`  | Database uniqueness/conflict errors         | commit        |
+
+The library exposes `ERROR_CODE_DICT` and `normalize_error_item` for normalization.
+
+## Book Template Contract (Recommended)
+
+Built-in contract is available via `get_book_template_contract()`.
+Recommended columns:
+
+| Column        | Field          | Required | Example             |
+| ------------- | -------------- | -------- | ------------------- |
+| `ISBN`        | `isbn`         | yes      | `9787302511854`     |
+| `Title`       | `title`        | yes      | `FastAPI in Action` |
+| `Author`      | `author`       | yes      | `Li Ming`           |
+| `Status`      | `status`       | yes      | `可借阅`            |
+| `PublishedAt` | `published_at` | no       | `2026-01-01`        |
+| `Price`       | `price`        | no       | `79.00`             |
+| `Stock`       | `stock`        | no       | `10`                |
+
+Status alias mapping:
+
+- `可借阅` -> `available`
+- `不可借阅` -> `unavailable`
+
+Template file example: [examples/fixtures/books_template.csv](examples/fixtures/books_template.csv)
 
 ## Unique Constraint Detection
 
@@ -518,6 +606,30 @@ Use preview with `kind=all` to inspect the original parsed data.
 - **checksum mismatch**: Ensure the client passes the checksum from `upload_parse_validate`.
 - **missing_dependency**: Reinstall bundled dependencies or install the required adapter/driver.
 - **db_conflict errors**: Check unique constraints and whether soft-deleted records exist.
+
+## Production Cleanup (Recommended)
+
+`ImportExportService` stores intermediate files (for example `parsed.parquet`,
+`valid.parquet`, `errors.json`) under the configured imports workspace.
+For production, schedule periodic cleanup to remove expired import artifacts.
+
+```python
+from fastapi_import_export.storage import cleanup_expired_imports
+
+
+# Example: run every hour in scheduler/cron and keep last 24 hours
+removed = cleanup_expired_imports(ttl_hours=24)
+print(f"removed import workspaces: {removed}")
+```
+
+You can run this with cron/Task Scheduler/Celery beat according to your ops setup.
+
+## Release & Compatibility Policy
+
+- Current project maturity: **Beta**.
+- We aim to keep documented public APIs backward compatible within minor versions.
+- Breaking changes are introduced in major versions and called out in release notes.
+- See [CHANGELOG.md](CHANGELOG.md) for release details and upgrade notes.
 
 ## Testing
 

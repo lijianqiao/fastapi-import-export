@@ -34,6 +34,12 @@ class TestImportErrorItem:
         assert item.row_number == 1
         assert item.message == "bad value"
         assert item.field is None
+        assert item.type is None
+
+    def test_optional_type_field(self) -> None:
+        """Optional type field is preserved / 可选 type 字段可保留。"""
+        item = ImportErrorItem(row_number=1, field="price", type="type_error", message="bad type")
+        assert item.type == "type_error"
 
     def test_missing_required_raises(self) -> None:
         """Missing required field raises ValidationError / 缺少必填字段时抛出 ValidationError。"""
@@ -121,6 +127,11 @@ class TestImportCommitRequest:
         req = ImportCommitRequest(import_id=uuid4(), checksum="abc", allow_overwrite=True)
         restored = ImportCommitRequest.model_validate_json(req.model_dump_json())
         assert restored.allow_overwrite is True
+
+    def test_overwrite_mode_roundtrip(self) -> None:
+        req = ImportCommitRequest(import_id=uuid4(), checksum="abc", overwrite_mode="upsert")
+        restored = ImportCommitRequest.model_validate_json(req.model_dump_json())
+        assert str(restored.overwrite_mode) == "upsert"
 
 
 class TestImportCommitResponse:

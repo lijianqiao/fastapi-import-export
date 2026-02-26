@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi_import_export.db_validation import DbCheckSpec
+from fastapi_import_export.overwrite import OverwriteMode
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,7 @@ class ImportOptions:
 
     db: Any | None = None
     allow_overwrite: bool = False
+    overwrite_mode: OverwriteMode | str | None = None
     unique_fields: list[str] | None = None
     db_checks: list[DbCheckSpec] | None = None
     allowed_extensions: Iterable[str] | None = None

@@ -21,6 +21,7 @@ from fastapi_import_export.contrib.sqlalchemy.adapters import (
     resolve_field_codecs,
     resolve_import_specs,
 )
+from fastapi_import_export.error_codes import DB_CONFLICT, SCHEMA_ERROR, TYPE_ERROR
 from fastapi_import_export.exceptions import ImportExportError
 from fastapi_import_export.formats import CSV_ALLOWED_EXTENSIONS, CSV_ALLOWED_MIME_TYPES
 from fastapi_import_export.importer import ImportResult, ImportStatus
@@ -152,7 +153,7 @@ async def _check_db_unique(
                     "row_number": int(rn),
                     "field": fields[0] if len(fields) == 1 else None,
                     "message": f"Unique conflict: {fields}={key} / 唯一性冲突: {fields}={key}",
-                    "type": "db_unique",
+                    "type": DB_CONFLICT,
                     "value": key,
                 }
             )
@@ -210,7 +211,7 @@ def _build_validate_fn(
                             row_number=row_number,
                             field=field,
                             message=f"Missing required field {field} / 缺少必填字段 {field}",
-                            type="required",
+                            type=SCHEMA_ERROR,
                         )
                         has_error = True
                     parsed[field] = None
@@ -224,7 +225,7 @@ def _build_validate_fn(
                             row_number=row_number,
                             field=field,
                             message=f"Invalid value for {field}: {raw_text} / 字段 {field} 格式错误: {raw_text}",
-                            type="format",
+                            type=TYPE_ERROR,
                             value=raw_text,
                         )
                         has_error = True
@@ -236,7 +237,7 @@ def _build_validate_fn(
                         row_number=row_number,
                         field=field,
                         message=f"Invalid value for {field}: {raw_text} / 字段 {field} 格式错误: {raw_text}",
-                        type="format",
+                        type=TYPE_ERROR,
                         value=raw_text,
                     )
                     has_error = True
@@ -352,6 +353,7 @@ async def import_model_csv(
         column_aliases=_build_column_aliases(specs),
         validate_fn=validate_fn,
         allow_overwrite=opts.allow_overwrite,
+        overwrite_mode=opts.overwrite_mode,
         unique_fields=effective_unique_fields,
         db_checks=opts.db_checks,
         allowed_extensions=allow_exts,
@@ -364,6 +366,7 @@ async def import_model_csv(
             import_id=validate_resp.import_id,
             checksum=validate_resp.checksum,
             allow_overwrite=opts.allow_overwrite,
+            overwrite_mode=opts.overwrite_mode,
         ),
         persist_fn=persist_fn_final,
     )

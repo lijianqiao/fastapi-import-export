@@ -27,6 +27,7 @@ from fastapi_import_export.formats import (
 )
 from fastapi_import_export.importer import ImportResult, ImportStatus
 from fastapi_import_export.options import ExportOptions, ImportOptions
+from fastapi_import_export.overwrite import resolve_overwrite_mode
 from fastapi_import_export.renderers import render_chunks
 from fastapi_import_export.resource import Resource
 from fastapi_import_export.schemas import ImportCommitRequest, ImportErrorItem
@@ -258,6 +259,10 @@ async def _import_file(
     """
     svc = ImportExportService(db=options.db)
     codecs = resource.field_codecs if resource is not None else {}
+    allow_overwrite, overwrite_mode = resolve_overwrite_mode(
+        allow_overwrite=options.allow_overwrite,
+        overwrite_mode=options.overwrite_mode,
+    )
 
     async def wrapped_validate_fn(db, df, *, allow_overwrite: bool = False):
         if not codecs:
@@ -282,7 +287,8 @@ async def _import_file(
         file=file,
         column_aliases=resource.field_mapping(),
         validate_fn=wrapped_validate_fn,
-        allow_overwrite=options.allow_overwrite,
+        allow_overwrite=allow_overwrite,
+        overwrite_mode=overwrite_mode,
         unique_fields=options.unique_fields,
         db_checks=options.db_checks,
         allowed_extensions=allowed_extensions,
@@ -294,7 +300,8 @@ async def _import_file(
         body=ImportCommitRequest(
             import_id=validate_resp.import_id,
             checksum=validate_resp.checksum,
-            allow_overwrite=options.allow_overwrite,
+            allow_overwrite=allow_overwrite,
+            overwrite_mode=overwrite_mode,
         ),
         persist_fn=wrapped_persist_fn,
     )

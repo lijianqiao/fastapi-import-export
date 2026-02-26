@@ -514,3 +514,13 @@ class TestRedisLock:
         )
         resp = await svc.commit(body=body, persist_fn=_dummy_persist)
         assert resp.status == "committed"
+
+class TestExportTableValidation:
+    @pytest.mark.asyncio
+    async def test_export_rejects_unsupported_format(self, svc: ImportExportService) -> None:
+        async def df_fn(db: Any) -> pl.DataFrame:
+            return pl.DataFrame({"name": ["alice"]})
+
+        with pytest.raises(ImportExportError) as exc_info:
+            await svc.export_table(fmt="pdf", filename_prefix="users", df_fn=df_fn)
+        assert exc_info.value.error_code == "unsupported_export_format"

@@ -17,8 +17,11 @@ projects to use these helpers.
 import ipaddress
 import re
 from collections.abc import Iterable
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
+from fastapi_import_export.error_codes import SCHEMA_ERROR
 from fastapi_import_export.validation_core import ErrorCollector, RowContext
 
 
@@ -53,7 +56,7 @@ class RowValidator(RowContext):
         """
         v = self.get_str(field)
         if not v:
-            self.add(field=field, message=message, type="required")
+            self.add(field=field, message=message, type=SCHEMA_ERROR)
 
     def ip_address(self, field: str, message: str) -> None:
         """Check if the field is a valid IP address.
@@ -71,7 +74,7 @@ class RowValidator(RowContext):
         try:
             ipaddress.ip_address(v)
         except Exception:
-            self.add(field=field, message=message, value=v, type="format")
+            self.add(field=field, message=message, value=v, type=SCHEMA_ERROR)
 
     def one_of(self, field: str, allowed: set[str], message_prefix: str) -> None:
         """Check if the field is one of the allowed values.
@@ -93,7 +96,7 @@ class RowValidator(RowContext):
                 field=field,
                 message=f"Value not allowed: {v} / {message_prefix}: {v}",
                 value=v,
-                type="enum",
+                type=SCHEMA_ERROR,
             )
 
     def regex(self, field: str, pattern: str, message: str) -> None:
@@ -112,7 +115,7 @@ class RowValidator(RowContext):
         if not v:
             return
         if re.fullmatch(pattern, v) is None:
-            self.add(field=field, message=message, value=v, type="format")
+            self.add(field=field, message=message, value=v, type=SCHEMA_ERROR)
 
     def require_fields(self, fields: Iterable[str], message_prefix: str) -> None:
         """Check if the required fields are not blank.
@@ -129,7 +132,7 @@ class RowValidator(RowContext):
                 self.add(
                     field=f,
                     message=f"Missing required field {f} / {message_prefix} {f}",
-                    type="required",
+                    type=SCHEMA_ERROR,
                 )
 
     def db_unique_conflict(
@@ -178,3 +181,128 @@ class RowValidator(RowContext):
                 value=v,
                 type="db_conflict",
             )
+
+
+def coerce_polars_types(
+    df: Any,
+    *,
+    type_rules: dict[str, str],
+    enum_aliases: dict[str, dict[str, Any]] | None = None,
+) -> tuple[Any, list[dict[str, Any]]]:
+    """Coerce Polars rows by simple type rules and collect row-level errors.
+    基于简单类型规则转换 Polars 行数据，并收集行级错误。
+
+    This helper is designed for validate-stage pre-checks, so type errors are
+    returned before commit/persist.
+    该助手用于 validate 阶段前置检查，让类型错误在 commit/persist 前返回。
+
+    Supported rule values:
+        - int / float / decimal / bool / date / datetime / str / enum
+        支持规则值：int / float / decimal / bool / date / datetime / str / enum
+
+    Args:
+        df: Polars DataFrame with optional `row_number`.
+            Polars DataFrame（可包含 `row_number` 列）。
+        type_rules: Field -> rule mapping.
+            字段到规则的映射。
+        enum_aliases: Field -> alias map when rule is enum.
+            当规则为 enum 时，字段到别名映射。
+
+    Returns:
+        tuple[Any, list[dict[str, Any]]]:
+            - valid_df: Rows with successful coercion.
+              valid_df：转换成功的行。
+            - errors: Type errors with `type=type_error`.
+              errors：类型错误列表（`type=type_error`）。
+    """
+    try:
+        import polars as pl
+    except Exception as exc:
+        raise RuntimeError("polars is required for coerce_polars_types / coerce_polars_types 需要 polars") from exc
+
+    if df is None or getattr(df, "is_empty", lambda: True)():
+        return pl.DataFrame(), []
+
+    enum_aliases = enum_aliases or {}
+    rows = df.to_dicts()
+    valid_rows: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+
+    truthy = {"1", "true", "yes", "y", "on"}
+    falsy = {"0", "false", "no", "n", "off"}
+
+    for row in rows:
+        row_number = int(row.get("row_number") or 0)
+        converted = dict(row)
+        has_error = False
+        for field, rule in type_rules.items():
+            if field not in row:
+                continue
+            raw = row.get(field)
+            text = "" if raw is None else str(raw).strip()
+            if text == "":
+                converted[field] = None
+                continue
+            rule_name = str(rule).strip().lower()
+            try:
+                if rule_name == "int":
+                    converted[field] = int(text)
+                elif rule_name == "float":
+                    converted[field] = float(text)
+                elif rule_name == "decimal":
+                    converted[field] = Decimal(text)
+                elif rule_name == "bool":
+                    low = text.lower()
+                    if low in truthy:
+                        converted[field] = True
+                    elif low in falsy:
+                        converted[field] = False
+                    else:
+                        raise ValueError("invalid bool")
+                elif rule_name == "date":
+                    converted[field] = date.fromisoformat(text)
+                elif rule_name == "datetime":
+                    converted[field] = datetime.fromisoformat(text)
+                elif rule_name == "str":
+                    converted[field] = text
+                elif rule_name == "enum":
+                    aliases = enum_aliases.get(field, {})
+                    converted[field] = aliases.get(text, aliases.get(text.lower(), text))
+                else:
+                    raise ValueError("unsupported rule")
+            except Exception:
+                errors.append(
+                    {
+                        "row_number": row_number,
+                        "field": field,
+                        "message": f"Invalid {rule_name} value: {text} / {field} 字段类型错误: {text}",
+                        "type": "type_error",
+                        "value": text,
+                    }
+                )
+                has_error = True
+        if not has_error:
+            valid_rows.append(converted)
+
+    return (pl.DataFrame(valid_rows) if valid_rows else pl.DataFrame()), errors
+
+
+def drop_internal_columns(df: Any, *, internal_columns: Iterable[str] = ("row_number",)) -> Any:
+    """Drop framework metadata columns before persistence.
+    在持久化之前删除框架元字段列。
+
+    Args:
+        df: Input DataFrame.
+            输入 DataFrame。
+        internal_columns: Internal columns to remove.
+            需要移除的内部列。
+
+    Returns:
+        Any: DataFrame without internal columns.
+            删除内部列后的 DataFrame。
+    """
+    columns = set(getattr(df, "columns", []))
+    to_drop = [name for name in internal_columns if name in columns]
+    if not to_drop:
+        return df
+    return df.drop(to_drop)

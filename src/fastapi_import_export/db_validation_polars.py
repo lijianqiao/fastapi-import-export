@@ -15,6 +15,35 @@ import polars as pl
 from fastapi_import_export.db_validation import DbCheckSpec, KeyTuple
 
 
+def _normalize_key_part(value: Any) -> str | None:
+    """Normalize key part text while preserving falsy values like 0/False.
+    在保留 0/False 等假值的同时规范化 key 部分文本。
+
+    Rules:
+        - None -> None
+        - blank string -> None
+        - other values -> stripped string representation
+    规则:
+        - None -> None
+        - 空字符串 -> None
+        - 其他值 -> 去除空白的字符串表示
+
+    Args:
+        value: Input value.
+            输入值。
+    Returns:
+        str | None: Normalized string or None.
+            规范化后的字符串或 None。
+
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text
+
+
 def build_key_to_row_numbers(df: pl.DataFrame, key_fields: Iterable[str]) -> dict[KeyTuple, list[int]]:
     """
     Build mapping: key tuple -> row_number list.
@@ -43,9 +72,10 @@ def build_key_to_row_numbers(df: pl.DataFrame, key_fields: Iterable[str]) -> dic
     rows = df.select(["row_number", *fields]).to_dicts()
     for r in rows:
         row_number = int(r.get("row_number") or 0)
-        key = tuple(str(r.get(f) or "").strip() for f in fields)
-        if any(not part for part in key):
+        normalized_parts = [_normalize_key_part(r.get(f)) for f in fields]
+        if any(part is None for part in normalized_parts):
             continue
+        key = tuple(str(part) for part in normalized_parts)
         key_to_rows.setdefault(key, []).append(row_number)
     return key_to_rows
 
